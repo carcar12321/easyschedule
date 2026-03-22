@@ -369,3 +369,23 @@
     async function deleteSchedule(id) { await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${id}`,{method:"DELETE", headers:{"Authorization":`Bearer ${getToken()}`}}); loadRoomData(currentRoomId); }
     async function deleteComment(sid, cid) { await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${sid}/comment/${cid}`,{method:"DELETE", headers:{"Authorization":`Bearer ${getToken()}`}}); loadRoomData(currentRoomId); }
     async function saveOrder(d) {
+        const ids = Array.from(document.getElementById(`list-day-${d}`).querySelectorAll('li')).map(li=>parseInt(li.dataset.id));
+        await fetch(`${API_BASE}/room/${currentRoomId}/reorder`, { method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${getToken()}`}, body:JSON.stringify({new_order:ids}) });
+    }
+    function askApprove(id) { const d=prompt("몇일차?"), st=prompt("시작시간(HH:MM)?"), et=prompt("종료시간(HH:MM)?"); if(d&&st&&et) fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`,{method:"POST", headers:{"Content-Type":"application/json","Authorization":`Bearer ${getToken()}`}, body:JSON.stringify({day_num:parseInt(d), start_time:st, end_time:et})}).then(()=>loadRoomData(currentRoomId)); }
+    async function calculateBudget() {
+        const rate = parseFloat(document.getElementById('exchangeRateInput').value)||null;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/budget_summary${rate?`?exchange_rate=${rate}`:''}`);
+        const data = await res.json();
+        document.getElementById('budgetMembers').innerText = data.member_count; document.getElementById('budgetTotalLocal').innerText = data.total_local.toLocaleString();
+        document.getElementById('budgetPerLocal').innerText = data.per_person_local.toLocaleString();
+        if(data.per_person_krw!==null) { document.getElementById('budgetKrwWrap').style.display='block'; document.getElementById('budgetPerKrw').innerText = data.per_person_krw.toLocaleString(); }
+    }
+    async function updateRoomSettings() {
+        const pw = prompt("관리자 비번:"); if(!pw) return;
+        await fetch(`${API_BASE}/room/${currentRoomId}/settings`, {method:"PATCH", headers:{"Content-Type":"application/json","Authorization":`Bearer ${getToken()}`}, body:JSON.stringify({password:pw, title:document.getElementById('adminRoomTitle').value, member_count:parseInt(document.getElementById('adminMemberCount').value), is_comment_enabled:document.getElementById('adminCommentToggle').checked})});
+        loadRoomData(currentRoomId);
+    }
+</script>
+</body>
+</html>
