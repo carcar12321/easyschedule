@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy Schedule 🎒</title>
+    <style>
+        /* 기본 스타일 세팅 */
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; color: #333; }
+        
+        /* 상단 고정 네비게이션 바 (로그인/설정 영역) */
+        .top-bar { background-color: #1e3a8a; color: white; padding: 15px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .top-bar h1 { margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+        .top-bar-inputs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; }
+        .top-bar button { padding: 8px 16px; background-color: #ef4444; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .top-bar button:hover { background-color: #dc2626; }
+
+        .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+        
+        /* 탭 메뉴 스타일 */
+        .tabs { display: flex; gap: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
+        .tab-btn { padding: 12px 24px; background: #e2e8f0; color: #4a5568; border: none; border-radius: 8px 8px 0 0; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; }
+        .tab-btn.active { background: #2b6cb0; color: white; }
+        .tab-btn:hover:not(.active) { background: #cbd5e0; }
+
+        /* 탭 컨텐츠 영역 */
+        .tab-content { display: none; background: white; border-radius: 0 0 12px 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .tab-content.active { display: block; }
+        
+        h3 { margin-top: 0; color: #2d3748; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; }
+        
+        /* 리스트 스타일 */
+        ul { list-style: none; padding: 0; margin: 0 0 20px 0; }
+        li { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+        .badge-time { background: #ebf8ff; color: #2b6cb0; }
+        .badge-name { background: #fff5f5; color: #c53030; }
+        
+        .link-btn-group { display: flex; gap: 8px; margin-top: 10px; }
+        .link-btn { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; text-decoration: none; text-align: center; }
+        .btn-google { background: #e2e8f0; color: #4a5568; }
+        .btn-tabelog { background: #fed7d7; color: #c53030; }
+        
+        /* 입력 폼 스타일 */
+        .form-group { background: #f7fafc; padding: 20px; border-radius: 8px; border: 1px dashed #a0aec0; }
+        .form-group h4 { margin-top: 0; margin-bottom: 15px; color: #4a5568; }
+        .flex-row { display: flex; gap: 10px; margin-bottom: 10px; }
+        .form-group input, .form-group select { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e0; }
+        .form-btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; color: white; cursor: pointer; margin-top: 10px; }
+        .btn-add-sch { background-color: #48bb78; }
+        .btn-add-sug { background-color: #ed8936; }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <h1>🎒 Easy Schedule</h1>
+    <div class="top-bar-inputs">
+        <input type="text" id="globalRoomId" placeholder="방 ID 입력 (예: sXprCt8Gxjkq)">
+        <input type="password" id="globalPw" placeholder="비밀번호 (눈팅족은 생략)">
+        <button onclick="loadRoomData()">🚀 입장 / 새로고침</button>
+    </div>
+</div>
+
+<div class="container" id="mainContainer" style="display: none;">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-schedule', this)">📅 확정된 일정</button>
+        <button class="tab-btn" onclick="switchTab('tab-suggestion', this)">🙋‍♂️ 눈팅족 참견 탭</button>
+    </div>
+
+    <div id="tab-schedule" class="tab-content active">
+        <h3>📅 확정된 일정</h3>
+        <ul id="scheduleList"></ul>
+        
+        <div class="form-group">
+            <h4>+ 새 일정 등록 (관리자/동행자 전용)</h4>
+            <div class="flex-row">
+                <select id="schDay" style="width: 25%;">
+                    <option value="" disabled selected>일차 선택</option>
+                    <script>
+                        for(let i=1; i<=15; i++) document.write(`<option value="${i}">${i}일차</option>`);
+                    </script>
+                </select>
+                
+                <select id="schHour" style="width: 25%;">
+                    <option value="" disabled selected>시간</option>
+                    <script>
+                        for(let i=1; i<=24; i++) {
+                            let hour = i.toString().padStart(2, '0');
+                            document.write(`<option value="${hour}">${hour}시</option>`);
+                        }
+                    </script>
+                </select>
+                
+                <input type="number" id="schMinute" placeholder="분 (00~59)" min="0" max="59" style="width: 50%;">
+            </div>
+            <input type="text" id="schContent" placeholder="일정 내용 (예: 흑돼지 돈카츠 방문)" style="margin-bottom: 10px;">
+            <div class="flex-row">
+                <input type="text" id="schGoogleMap" placeholder="구글맵 링크 (선택)">
+                <input type="text" id="schTabelog" placeholder="타베로그 링크 (선택)">
+            </div>
+            <button onclick="addSchedule()" class="form-btn btn-add-sch">✅ 일정 추가하기</button>
+        </div>
+    </div>
+
+    <div id="tab-suggestion" class="tab-content">
+        <h3>🙋‍♂️ 눈팅족 참견 내역</h3>
+        <ul id="suggestionList"></ul>
+        
+        <div class="form-group">
+            <h4>+ 맛집/명소 추천하기 (비밀번호 불필요)</h4>
+            <input type="text" id="sugName" placeholder="닉네임 (예: 지나가던 여행객)" style="margin-bottom: 10px;">
+            <input type="text" id="sugContent" placeholder="추천 내용 (예: 여기 라멘 진짜 맛있습니다!)" style="margin-bottom: 10px;">
+            <div class="flex-row">
+                <input type="text" id="sugGoogleMap" placeholder="구글맵 링크 (선택)">
+                <input type="text" id="sugTabelog" placeholder="타베로그 링크 (선택)">
+            </div>
+            <button onclick="addSuggestion()" class="form-btn btn-add-sug">💡 추천 남기기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "";
+    let currentRoomId = "";
+
+    // 탭 전환 기능
+    function switchTab(tabId, btnElement) {
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        btnElement.classList.add('active');
+    }
+
+    // 데이터 불러오기
+    async function loadRoomData() {
+        const roomId = document.getElementById("globalRoomId").value.trim();
+        if (!roomId) {
+            alert("상단에 방 ID를 입력해주세요.");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/room/${roomId}/data`);
+            if (!res.ok) {
+                alert("방을 찾을 수 없습니다. 방 ID를 확인해주세요.");
+                return;
+            }
+            
+            const data = await res.json();
+            currentRoomId = data.room_id;
+            document.getElementById("mainContainer").style.display = "block";
+
+            // 일정 렌더링
+            const sList = document.getElementById("scheduleList");
+            sList.innerHTML = "";
+            if (data.schedules.length === 0) sList.innerHTML = "<p style='color:#a0aec0; text-align:center;'>등록된 일정이 없습니다.</p>";
+            data.schedules.forEach(s => {
+                let links = "";
+                if (s.google_map_url) links += `<a href="${s.google_map_url}" target="_blank" class="link-btn btn-google">📍 구글맵</a>`;
+                if (s.tabelog_url) links += `<a href="${s.tabelog_url}" target="_blank" class="link-btn btn-tabelog">🍣 타베로그</a>`;
+
+                sList.innerHTML += `
+                    <li>
+                        <span class="badge badge-time">DAY ${s.day_num} - ${s.time_str}</span>
+                        <div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 5px;">${s.content}</div>
+                        ${links ? `<div class="link-btn-group">${links}</div>` : ""}
+                    </li>
+                `;
+            });
+
+            // 참견 렌더링
+            const sugList = document.getElementById("suggestionList");
+            sugList.innerHTML = "";
+            if (data.suggestions.length === 0) sugList.innerHTML = "<p style='color:#a0aec0; text-align:center;'>등록된 추천이 없습니다.</p>";
+            data.suggestions.forEach(s => {
+                let links = "";
+                if (s.google_map_url) links += `<a href="${s.google_map_url}" target="_blank" class="link-btn btn-google">📍 구글맵</a>`;
+                if (s.tabelog_url) links += `<a href="${s.tabelog_url}" target="_blank" class="link-btn btn-tabelog">🍣 타베로그</a>`;
+
+                sugList.innerHTML += `
+                    <li>
+                        <span class="badge badge-name">🗣️ ${s.suggester_name}</span>
+                        <div style="margin-bottom: 5px;">${s.content}</div>
+                        ${links ? `<div class="link-btn-group">${links}</div>` : ""}
+                    </li>
+                `;
+            });
+
+        } catch (error) {
+            alert("서버와 통신하는 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 일정 추가 로직 (시간 유효성 검사 및 전역 비밀번호 사용)
+    async function addSchedule() {
+        const day_num = document.getElementById("schDay").value;
+        const hour = document.getElementById("schHour").value;
+        const minInput = document.getElementById("schMinute").value;
+        const content = document.getElementById("schContent").value;
+        const password = document.getElementById("globalPw").value; // 상단 바 비밀번호 가져오기
+
+        // 1. 필수값 검사
+        if (!day_num || !hour || minInput === "" || !content) {
+            alert("일차, 시간, 분, 내용을 모두 입력해주세요.");
+            return;
+        }
+        if (!password) {
+            alert("일정을 추가하시려면 상단에 비밀번호를 입력해주세요.");
+            return;
+        }
+
+        // 2. 분(Minute) 유효성 검사 (0~59)
+        const minNum = parseInt(minInput, 10);
+        if (isNaN(minNum) || minNum < 0 || minNum > 59) {
+            alert("분은 00에서 59 사이의 숫자로 올바르게 입력해주세요.");
+            return;
+        }
+
+        // 시간 포맷 조립 (예: "18" + "05" -> "18:05")
+        const time_str = `${hour}:${minNum.toString().padStart(2, '0')}`;
+
+        const payload = {
+            day_num: parseInt(day_num),
+            time_str: time_str,
+            content: content,
+            google_map_url: document.getElementById("schGoogleMap").value,
+            tabelog_url: document.getElementById("schTabelog").value,
+            password: password
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                alert("일정이 성공적으로 등록되었습니다.");
+                // 입력창 초기화
+                document.getElementById("schContent").value = "";
+                document.getElementById("schMinute").value = "";
+                loadRoomData();
+            } else {
+                alert("비밀번호가 틀렸거나 권한이 없습니다.");
+            }
+        } catch (error) {
+            alert("서버 오류가 발생했습니다.");
+        }
+    }
+
+    // 참견 추가 로직
+    async function addSuggestion() {
+        const payload = {
+            suggester_name: document.getElementById("sugName").value,
+            content: document.getElementById("sugContent").value,
+            google_map_url: document.getElementById("sugGoogleMap").value,
+            tabelog_url: document.getElementById("sugTabelog").value
+        };
+
+        if (!payload.suggester_name || !payload.content) {
+            alert("닉네임과 추천 내용은 필수입니다.");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                alert("추천이 등록되었습니다!");
+                document.getElementById("sugName").value = "";
+                document.getElementById("sugContent").value = "";
+                loadRoomData();
+            } else {
+                alert("추천 등록에 실패했습니다.");
+            }
+        } catch (error) {
+            alert("서버 오류가 발생했습니다.");
+        }
+    }
+</script>
+
+</body>
+</html>
