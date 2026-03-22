@@ -15,9 +15,9 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, validator
 
 # ─────────────────────────────────────────────
-# 앱 초기화
+# 앱 초기화 (이름 변경: Easy Schedule)
 # ─────────────────────────────────────────────
-app = FastAPI(title="Easy Trip API", version="2.0.0")
+app = FastAPI(title="Easy Schedule API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,12 +70,13 @@ def resolve_currency(city: str, currency_override: Optional[str] = None) -> str:
     return CITY_CURRENCY_MAP.get(city, "OTHER")
 
 # ─────────────────────────────────────────────
-# DB 초기화
+# DB 초기화 및 마이그레이션
 # ─────────────────────────────────────────────
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
 
+    # 1. 방 테이블 (북마크 3개 확장)
     c.execute("""
         CREATE TABLE IF NOT EXISTS room (
             room_id          TEXT PRIMARY KEY,
@@ -85,10 +86,17 @@ def init_db():
             city             TEXT DEFAULT '',
             currency         TEXT DEFAULT 'JPY',
             member_count     INTEGER DEFAULT 1,
-            is_comment_enabled BOOLEAN DEFAULT FALSE
+            is_comment_enabled BOOLEAN DEFAULT FALSE,
+            bookmark_name1   TEXT DEFAULT '',
+            bookmark_link1   TEXT DEFAULT '',
+            bookmark_name2   TEXT DEFAULT '',
+            bookmark_link2   TEXT DEFAULT '',
+            bookmark_name3   TEXT DEFAULT '',
+            bookmark_link3   TEXT DEFAULT ''
         )
     """)
 
+    # 2. 일정 테이블
     c.execute("""
         CREATE TABLE IF NOT EXISTS schedule (
             id              SERIAL PRIMARY KEY,
@@ -105,6 +113,35 @@ def init_db():
         )
     """)
 
+    # 3. 항공편 테이블 (신규)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS flight (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            flight_type     TEXT NOT NULL, -- '출국' or '귀국'
+            airport         TEXT NOT NULL,
+            flight_num      TEXT NOT NULL,
+            terminal        TEXT DEFAULT '',
+            departure_time  TEXT NOT NULL,
+            arrival_time    TEXT NOT NULL,
+            memo            TEXT DEFAULT ''
+        )
+    """)
+
+    # 4. 숙박 테이블 (신규)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS accommodation (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            days_applied    TEXT NOT NULL, -- "1,2,3" 형태로 저장
+            hotel_name      TEXT NOT NULL,
+            google_map_url  TEXT DEFAULT '',
+            has_breakfast   BOOLEAN DEFAULT FALSE,
+            budget          INTEGER
+        )
+    """)
+
+    # 5. 훈수(추천) 테이블
     c.execute("""
         CREATE TABLE IF NOT EXISTS suggestion (
             id              SERIAL PRIMARY KEY,
@@ -119,6 +156,7 @@ def init_db():
         )
     """)
 
+    # 6. 댓글 테이블
     c.execute("""
         CREATE TABLE IF NOT EXISTS comment (
             id          SERIAL PRIMARY KEY,
@@ -129,11 +167,18 @@ def init_db():
         )
     """)
 
+    # 기존 DB 안전 업데이트
     migrations = [
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''",
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'JPY'",
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS member_count INTEGER DEFAULT 1",
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS is_comment_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name1 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link1 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name2 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link2 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name3 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link3 TEXT DEFAULT ''",
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS budget INTEGER",
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS start_time TEXT DEFAULT ''",
@@ -155,7 +200,7 @@ def startup_event():
     init_db()
 
 # ─────────────────────────────────────────────
-# JWT 유틸
+# JWT 유틸 및 인증 로직
 # ─────────────────────────────────────────────
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -177,9 +222,7 @@ def get_current_user_info(room_id: str, credentials: Optional[HTTPAuthorizationC
         return "guest", "훈수꾼"
     return payload.get("role", "guest"), payload.get("nickname", "훈수꾼")
 
-# ─────────────────────────────────────────────
-# 비밀번호 검증
-# ─────────────────────────────────────────────
+# 비밀번호 검증 (영문/숫자 포함 6자 이상)
 ADMIN_PW_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{6,}$")
 
 def validate_admin_pw(pw: str) -> bool:
@@ -194,7 +237,7 @@ def verify_pw(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 # ─────────────────────────────────────────────
-# Pydantic 모델
+# Pydantic 데이터 모델
 # ─────────────────────────────────────────────
 class RoomCreate(BaseModel):
     title: str
@@ -219,6 +262,12 @@ class RoomUpdate(BaseModel):
     currency: Optional[str] = None
     member_count: Optional[int] = None
     is_comment_enabled: Optional[bool] = None
+    bookmark_name1: Optional[str] = None
+    bookmark_link1: Optional[str] = None
+    bookmark_name2: Optional[str] = None
+    bookmark_link2: Optional[str] = None
+    bookmark_name3: Optional[str] = None
+    bookmark_link3: Optional[str] = None
 
 class LoginRequest(BaseModel):
     room_id: str
@@ -232,6 +281,22 @@ class ScheduleCreate(BaseModel):
     content: str
     google_map_url: Optional[str] = ""
     tabelog_url: Optional[str] = ""
+    budget: Optional[int] = None
+
+class FlightCreate(BaseModel):
+    flight_type: str
+    airport: str
+    flight_num: str
+    terminal: Optional[str] = ""
+    departure_time: str
+    arrival_time: str
+    memo: Optional[str] = ""
+
+class AccommodationCreate(BaseModel):
+    days_applied: List[int]
+    hotel_name: str
+    google_map_url: Optional[str] = ""
+    has_breakfast: bool = False
     budget: Optional[int] = None
 
 class ReorderRequest(BaseModel):
@@ -253,7 +318,7 @@ class CommentCreate(BaseModel):
     content: str
 
 # ─────────────────────────────────────────────
-# API 엔드포인트
+# 정적 파일 & 로그인 API
 # ─────────────────────────────────────────────
 @app.get("/")
 @app.get("/{room_id}")
@@ -310,21 +375,44 @@ def create_room(room: RoomCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
 
+# ─────────────────────────────────────────────
+# 메인 데이터 로드 API
+# ─────────────────────────────────────────────
 @app.get("/room/{room_id}/data")
 def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
     role, nickname = get_current_user_info(room_id, credentials)
     conn = get_db_connection()
     c = conn.cursor()
 
-    c.execute("SELECT title, city, currency, member_count, is_comment_enabled FROM room WHERE room_id=%s", (room_id,))
+    c.execute("""
+        SELECT title, city, currency, member_count, is_comment_enabled,
+               bookmark_name1, bookmark_link1, bookmark_name2, bookmark_link2, bookmark_name3, bookmark_link3
+        FROM room WHERE room_id=%s
+    """, (room_id,))
     room_row = c.fetchone()
     if not room_row:
         c.close(); conn.close()
         raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
 
-    title, city, currency, member_count, is_comment_enabled = room_row
+    (title, city, currency, member_count, is_comment_enabled,
+     b_n1, b_l1, b_n2, b_l2, b_n3, b_l3) = room_row
+    
     currency_symbol = CURRENCY_SYMBOL_MAP.get(currency, "")
 
+    bookmarks = []
+    if b_n1 and b_l1: bookmarks.append({"name": b_n1, "url": b_l1})
+    if b_n2 and b_l2: bookmarks.append({"name": b_n2, "url": b_l2})
+    if b_n3 and b_l3: bookmarks.append({"name": b_n3, "url": b_l3})
+
+    # 항공권 조회
+    c.execute("SELECT id, flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo FROM flight WHERE room_id=%s ORDER BY id ASC", (room_id,))
+    flights = [{"id": r[0], "flight_type": r[1], "airport": r[2], "flight_num": r[3], "terminal": r[4], "departure_time": r[5], "arrival_time": r[6], "memo": r[7]} for r in c.fetchall()]
+
+    # 숙박 조회
+    c.execute("SELECT id, days_applied, hotel_name, google_map_url, has_breakfast, budget FROM accommodation WHERE room_id=%s ORDER BY id ASC", (room_id,))
+    accommodations = [{"id": r[0], "days_applied": [int(x) for x in r[1].split(',') if x], "hotel_name": r[2], "google_map_url": r[3], "has_breakfast": r[4], "budget": r[5]} for r in c.fetchall()]
+
+    # 일정 및 댓글 조회
     c.execute(
         """SELECT id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget
            FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC, start_time ASC""",
@@ -349,6 +437,7 @@ def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentia
     for s in schedules:
         s["comments"] = comments_map[s["id"]]
 
+    # 훈수(추천) 조회
     c.execute(
         """SELECT id, suggester_name, content, google_map_url, tabelog_url, good_cnt, bad_cnt, status
            FROM suggestion WHERE room_id=%s ORDER BY id DESC""", (room_id,)
@@ -356,16 +445,19 @@ def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentia
     suggestions = [{"id": r[0], "suggester_name": r[1], "content": r[2], "google_map_url": r[3] or "",
                     "tabelog_url": r[4] or "", "good_cnt": r[5], "bad_cnt": r[6], "status": r[7]} for r in c.fetchall()]
 
-    total_budget = sum(s["budget"] for s in schedules if s["budget"] is not None)
     c.close(); conn.close()
     
     return {
         "room_id": room_id, "title": title, "city": city, "currency": currency,
         "currency_symbol": currency_symbol, "member_count": member_count,
         "is_comment_enabled": is_comment_enabled, "role": role, "nickname": nickname,
-        "schedules": schedules, "suggestions": suggestions, "total_budget": total_budget,
+        "bookmarks": bookmarks, "flights": flights, "accommodations": accommodations,
+        "schedules": schedules, "suggestions": suggestions
     }
 
+# ─────────────────────────────────────────────
+# 방 설정 및 북마크 수정 (방장)
+# ─────────────────────────────────────────────
 @app.patch("/room/{room_id}/settings")
 def update_room_settings(room_id: str, req: RoomUpdate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
     role, _ = get_current_user_info(room_id, credentials)
@@ -377,11 +469,21 @@ def update_room_settings(room_id: str, req: RoomUpdate, credentials: Optional[HT
     if not row or not verify_pw(req.password, row[0]):
         c.close(); conn.close()
         raise HTTPException(status_code=401, detail="관리자 비밀번호가 올바르지 않습니다.")
+    
     fields, values = [], []
     if req.title is not None: fields.append("title=%s"); values.append(req.title)
     if req.team_pw is not None: fields.append("team_pw=%s"); values.append(hash_pw(req.team_pw) if req.team_pw else "")
     if req.member_count is not None: fields.append("member_count=%s"); values.append(req.member_count)
     if req.is_comment_enabled is not None: fields.append("is_comment_enabled=%s"); values.append(req.is_comment_enabled)
+    
+    # 북마크 업데이트
+    if req.bookmark_name1 is not None: fields.append("bookmark_name1=%s"); values.append(req.bookmark_name1)
+    if req.bookmark_link1 is not None: fields.append("bookmark_link1=%s"); values.append(req.bookmark_link1)
+    if req.bookmark_name2 is not None: fields.append("bookmark_name2=%s"); values.append(req.bookmark_name2)
+    if req.bookmark_link2 is not None: fields.append("bookmark_link2=%s"); values.append(req.bookmark_link2)
+    if req.bookmark_name3 is not None: fields.append("bookmark_name3=%s"); values.append(req.bookmark_name3)
+    if req.bookmark_link3 is not None: fields.append("bookmark_link3=%s"); values.append(req.bookmark_link3)
+
     if fields:
         values.append(room_id)
         c.execute(f"UPDATE room SET {', '.join(fields)} WHERE room_id=%s", values)
@@ -389,10 +491,70 @@ def update_room_settings(room_id: str, req: RoomUpdate, credentials: Optional[HT
     c.close(); conn.close()
     return {"status": "ok"}
 
+# ─────────────────────────────────────────────
+# 항공편(Flight) 및 숙박(Accommodation) API
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/flight", status_code=201)
+def add_flight(room_id: str, fl: FlightCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"): raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO flight (room_id, flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (room_id, fl.flight_type, fl.airport, fl.flight_num, fl.terminal, fl.departure_time, fl.arrival_time, fl.memo)
+    )
+    conn.commit()
+    c.close(); conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/flight/{flight_id}")
+def delete_flight(room_id: str, flight_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin": raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM flight WHERE id=%s AND room_id=%s", (flight_id, room_id))
+    conn.commit()
+    c.close(); conn.close()
+    return {"status": "ok"}
+
+@app.post("/room/{room_id}/accommodation", status_code=201)
+def add_accommodation(room_id: str, acc: AccommodationCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"): raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    
+    days_str = ",".join(map(str, sorted(acc.days_applied)))
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO accommodation (room_id, days_applied, hotel_name, google_map_url, has_breakfast, budget)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (room_id, days_str, acc.hotel_name, acc.google_map_url, acc.has_breakfast, acc.budget)
+    )
+    conn.commit()
+    c.close(); conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/accommodation/{acc_id}")
+def delete_accommodation(room_id: str, acc_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin": raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM accommodation WHERE id=%s AND room_id=%s", (acc_id, room_id))
+    conn.commit()
+    c.close(); conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# 기존 일정, 훈수, 댓글 관리 API
+# ─────────────────────────────────────────────
 @app.post("/room/{room_id}/schedule", status_code=201)
 def add_schedule(room_id: str, sch: ScheduleCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
     role, nickname = get_current_user_info(room_id, credentials)
-    if role not in ("admin", "team"): raise HTTPException(status_code=403, detail="동행자 이상의 권한이 필요합니다.")
+    if role not in ("admin", "team"): raise HTTPException(status_code=403, detail="권한이 없습니다.")
     
     conn = get_db_connection()
     c = conn.cursor()
@@ -420,7 +582,7 @@ def delete_schedule(room_id: str, sch_id: int, credentials: Optional[HTTPAuthori
 @app.post("/room/{room_id}/reorder")
 def reorder_schedule(room_id: str, req: ReorderRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
     role, _ = get_current_user_info(room_id, credentials)
-    if role not in ("admin", "team"): raise HTTPException(status_code=403, detail="동행자 이상의 권한이 필요합니다.")
+    if role not in ("admin", "team"): raise HTTPException(status_code=403)
     conn = get_db_connection()
     c = conn.cursor()
     for idx, sch_id in enumerate(req.new_order):
@@ -510,17 +672,37 @@ def delete_comment(room_id: str, sch_id: int, comment_id: int, credentials: Opti
     c.close(); conn.close()
     return {"status": "ok"}
 
+# ─────────────────────────────────────────────
+# 정산 및 예산 로직 업데이트 (숙박 예산 합산 포함)
+# ─────────────────────────────────────────────
 @app.get("/room/{room_id}/budget_summary")
 def budget_summary(room_id: str, exchange_rate: Optional[float] = None):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT member_count, currency FROM room WHERE room_id=%s", (room_id,))
     room_row = c.fetchone()
-    if not room_row: return {}
+    if not room_row: 
+        c.close(); conn.close()
+        return {}
+
+    # 일정 및 숙박 예산 합산
     c.execute("SELECT COALESCE(SUM(budget), 0) FROM schedule WHERE room_id=%s", (room_id,))
-    total_local = int(c.fetchone()[0])
+    total_sch_budget = int(c.fetchone()[0])
+    
+    c.execute("SELECT COALESCE(SUM(budget), 0) FROM accommodation WHERE room_id=%s", (room_id,))
+    total_acc_budget = int(c.fetchone()[0])
+
+    total_local = total_sch_budget + total_acc_budget
     per_person_local = total_local // room_row[0] if room_row[0] else 0
     per_person_krw = round(per_person_local / exchange_rate * 1000) if exchange_rate and exchange_rate > 0 else None
+    
     c.close(); conn.close()
-    return {"currency": room_row[1], "currency_symbol": CURRENCY_SYMBOL_MAP.get(room_row[1], ""), "member_count": room_row[0],
-            "total_local": total_local, "per_person_local": per_person_local, "per_person_krw": per_person_krw, "exchange_rate_per_1000krw": exchange_rate}
+    return {
+        "currency": room_row[1], 
+        "currency_symbol": CURRENCY_SYMBOL_MAP.get(room_row[1], ""), 
+        "member_count": room_row[0],
+        "total_local": total_local, 
+        "per_person_local": per_person_local, 
+        "per_person_krw": per_person_krw, 
+        "exchange_rate_per_1000krw": exchange_rate
+    }
