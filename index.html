@@ -6,54 +6,83 @@
     <title>Easy Trip 🎒</title>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
-        /* [기존 스타일 유지하되 아래 추가] */
         body { font-family: 'Noto Sans KR', sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; color: #333; }
-        .top-bar { background-color: #1e3a8a; color: white; padding: 15px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+        
+        /* 상단 네비게이션 바 */
+        .top-bar { background-color: #1e3a8a; color: white; padding: 15px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .top-bar h1 { margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .top-bar-inputs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; }
+        .top-bar button { padding: 8px 16px; background-color: #ef4444; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        
+        .btn-create-room { background-color: #10b981 !important; margin-left: 10px; font-size: 0.9rem; }
+
         .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
+        
+        /* 모달 스타일 */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-content input { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 15px; border: 1px solid #cbd5e0; border-radius: 6px; }
+        
+        /* 탭 메뉴 */
         .tabs { display: flex; gap: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
         .tab-btn { padding: 12px 24px; background: #e2e8f0; color: #4a5568; border: none; border-radius: 8px 8px 0 0; font-weight: bold; cursor: pointer; }
         .tab-btn.active { background: #2b6cb0; color: white; }
-        .tab-content { display: none; background: white; padding: 20px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .tab-content { display: none; background: white; padding: 25px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .tab-content.active { display: block; }
-        li { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px; list-style: none; cursor: grab; }
-        li:active { cursor: grabbing; }
-        .handle { color: #cbd5e0; margin-right: 10px; font-weight: bold; }
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
+        
+        /* 일정 리스트 스타일 */
+        .day-section { margin-bottom: 30px; }
+        .day-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; margin-bottom: 15px; }
+        .schedule-list { list-style: none; padding: 0; }
+        .schedule-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px; display: flex; flex-direction: column; cursor: grab; }
+        .schedule-item:active { cursor: grabbing; }
+        
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; width: fit-content; }
         .badge-time { background: #ebf8ff; color: #2b6cb0; }
         .badge-name { background: #fff5f5; color: #c53030; }
+        
         .link-btn-group { display: flex; gap: 8px; margin-top: 10px; }
         .link-btn { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; text-decoration: none; color: #4a5568; background: #e2e8f0; }
-        .btn-route { background: #2d3748; color: white; margin-bottom: 15px; width: 100%; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .vote-group { margin-top: 10px; display: flex; gap: 10px; }
-        .btn-v { background: white; border: 1px solid #e2e8f0; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8rem; }
+        
+        /* 버튼 스타일 */
+        .btn-submit { width: 100%; padding: 12px; background: #2b6cb0; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-copy { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; padding: 8px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px; font-weight: bold; }
+        .btn-route { background: #2d3748; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+        
+        .vote-group { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+        .btn-vote { background: white; border: 1px solid #e2e8f0; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+
+        .copy-box { background: #f1f5f9; padding: 15px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-family: monospace; font-size: 0.9rem; border: 1px dashed #cbd5e0; }
     </style>
 </head>
 <body>
 
 <div class="top-bar">
-    <h1>🎒 Easy Trip <button onclick="openModal()" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer;">+ 방 만들기</button></h1>
-    <div style="display:flex; gap:10px;">
+    <h1 onclick="location.href='/'">🎒 Easy Trip</h1>
+    <div class="top-bar-inputs">
+        <button onclick="openModal()" class="btn-create-room">+ 방 만들기</button>
         <input type="text" id="globalRoomId" placeholder="방 ID">
         <input type="password" id="globalPw" placeholder="비밀번호">
-        <button onclick="loadRoomData()" style="background:#ef4444; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer;">입장/새로고침</button>
+        <button onclick="loadRoomData()" style="background:#ef4444;">입장/새로고침</button>
     </div>
 </div>
 
 <div id="createRoomModal" class="modal-overlay">
     <div class="modal-content" id="modalForm">
-        <h3>새 방 만들기</h3>
-        <input type="text" id="newRoomTitle" placeholder="여행 제목" style="width:100%; padding:10px; margin-bottom:10px;">
-        <input type="password" id="newAdminPw" placeholder="방장 비번 (영/수/특 8자)" style="width:100%; padding:10px; margin-bottom:10px;">
-        <button onclick="submitCreateRoom()" style="width:100%; padding:12px; background:#2b6cb0; color:white; border:none; border-radius:6px; font-weight:bold;">생성하기</button>
-        <button onclick="closeModal()" style="width:100%; margin-top:10px; background:none; border:none; color:#666; cursor:pointer;">취소</button>
+        <h3>✨ 새 여행 방 만들기</h3>
+        <input type="text" id="newRoomTitle" placeholder="여행 제목 (예: 가고시마 4박 5일)">
+        <input type="password" id="newAdminPw" placeholder="관리자 비번 (영/수/특 8자 이상)">
+        <input type="password" id="newTeamPw" placeholder="동행자 비번 (선택사항)">
+        <button onclick="submitCreateRoom()" class="btn-submit">방 생성하기</button>
+        <button onclick="closeModal()" style="background:none; border:none; color:#666; width:100%; margin-top:10px; cursor:pointer;">취소</button>
     </div>
     <div class="modal-content" id="modalSuccess" style="display:none; text-align:center;">
-        <h3>방 생성 성공!</h3>
-        <p>코드: <strong id="generatedCode" style="color:#1e3a8a;"></strong></p>
-        <button onclick="copyCode()" style="padding:10px; background:#e2e8f0; border:none; border-radius:5px; cursor:pointer;">코드 복사</button>
-        <button onclick="location.reload()" style="margin-top:20px; width:100%; padding:12px; background:#2b6cb0; color:white; border:none; border-radius:6px;">닫기</button>
+        <h3>🎉 방 생성 성공!</h3>
+        <p>동행자들에게 아래 링크를 공유하세요.</p>
+        <div class="copy-box" id="generatedFullLink"></div>
+        <button onclick="copyFullLink()" class="btn-copy">🔗 전체 링크 복사하기</button>
+        <button onclick="enterCreatedRoom()" class="btn-submit" style="margin-top:15px;">바로 입장하기</button>
     </div>
 </div>
 
@@ -65,26 +94,29 @@
 
     <div id="tab-schedule" class="tab-content active">
         <div id="dayGroups"></div>
-        <div style="background:#f7fafc; padding:20px; border-radius:8px; border:1px dashed #a0aec0; margin-top:20px;">
-            <h4>+ 일정 직접 추가</h4>
+        
+        <div style="background:#f7fafc; padding:20px; border-radius:12px; border:1px dashed #a0aec0; margin-top:20px;">
+            <h4 style="margin-top:0;">+ 일정 직접 추가</h4>
             <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <select id="schDay" style="width:30%; padding:10px;"><script>for(let i=1;i<=15;i++)document.write(`<option value="${i}">${i}일차</option>`)</script></select>
-                <input type="text" id="schTime" placeholder="14:00" style="width:70%; padding:10px;">
+                <select id="schDay" style="width:30%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
+                    <script>for(let i=1;i<=15;i++)document.write(`<option value="${i}">${i}일차</option>`)</script>
+                </select>
+                <input type="text" id="schTime" placeholder="예: 14:00" style="width:70%; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-bottom:0;">
             </div>
-            <input type="text" id="schContent" placeholder="내용" style="width:100%; padding:10px; margin-bottom:10px;">
-            <input type="text" id="schMap" placeholder="구글맵 링크" style="width:100%; padding:10px; margin-bottom:10px;">
-            <button onclick="addSchedule()" style="width:100%; padding:12px; background:#48bb78; color:white; border:none; border-radius:6px; font-weight:bold;">일정 등록</button>
+            <input type="text" id="schContent" placeholder="일정 내용" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <input type="text" id="schMap" placeholder="구글맵 링크 (선택)" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <button onclick="addSchedule()" class="btn-submit" style="background:#48bb78;">일정 등록</button>
         </div>
     </div>
 
     <div id="tab-suggestion" class="tab-content">
-        <ul id="suggestionList"></ul>
-        <div style="background:#f7fafc; padding:20px; border-radius:8px; border:1px dashed #a0aec0;">
-            <h4>+ 맛집 추천하기</h4>
-            <input type="text" id="sugName" placeholder="닉네임" style="width:100%; padding:10px; margin-bottom:10px;">
-            <input type="text" id="sugContent" placeholder="추천 내용" style="width:100%; padding:10px; margin-bottom:10px;">
-            <input type="text" id="sugMap" placeholder="구글맵 링크" style="width:100%; padding:10px; margin-bottom:10px;">
-            <button onclick="addSuggestion()" style="width:100%; padding:12px; background:#ed8936; color:white; border:none; border-radius:6px; font-weight:bold;">추천 날리기</button>
+        <ul id="suggestionList" class="schedule-list"></ul>
+        <div style="background:#f7fafc; padding:20px; border-radius:12px; border:1px dashed #a0aec0; margin-top:20px;">
+            <h4 style="margin-top:0;">+ 맛집/명소 추천하기</h4>
+            <input type="text" id="sugName" placeholder="닉네임" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <input type="text" id="sugContent" placeholder="추천 내용" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <input type="text" id="sugMap" placeholder="구글맵 링크 (선택)" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <button onclick="addSuggestion()" class="btn-submit" style="background:#ed8936;">추천 남기기</button>
         </div>
     </div>
 </div>
@@ -92,9 +124,22 @@
 <script>
     const API_BASE = "";
     let currentRoomId = "";
+    let lastCreatedRoomId = "";
+    let lastCreatedPw = "";
+
+    // 페이지 로드 시 URL 확인 (다이내믹 라우팅)
+    window.onload = function() {
+        const path = window.location.pathname;
+        const roomIdFromUrl = path.split('/')[1];
+        if (roomIdFromUrl && roomIdFromUrl.length === 12) {
+            document.getElementById('globalRoomId').value = roomIdFromUrl;
+            loadRoomData();
+        }
+    };
 
     function openModal() { document.getElementById('createRoomModal').style.display='flex'; }
     function closeModal() { document.getElementById('createRoomModal').style.display='none'; }
+    
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
@@ -105,27 +150,39 @@
     async function submitCreateRoom() {
         const title = document.getElementById('newRoomTitle').value;
         const admin_pw = document.getElementById('newAdminPw').value;
+        const team_pw = document.getElementById('newTeamPw').value;
+        
         const res = await fetch(`${API_BASE}/create_room`, {
             method: "POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({title, admin_pw})
+            body: JSON.stringify({title, admin_pw, team_pw})
         });
         const data = await res.json();
         if(res.ok) {
-            document.getElementById('generatedCode').innerText = data.room_id;
+            lastCreatedRoomId = data.room_id;
+            lastCreatedPw = admin_pw;
+            document.getElementById('generatedFullLink').innerText = `${window.location.origin}/${data.room_id}`;
             document.getElementById('modalForm').style.display='none';
             document.getElementById('modalSuccess').style.display='block';
-        } else { alert("비번 규칙 확인 (영/수/특 8자)"); }
+        } else { alert("비밀번호 규칙을 확인하세요 (영문/숫자/특수문자 포함 8자 이상)"); }
     }
 
-    function copyCode() {
-        navigator.clipboard.writeText(document.getElementById('generatedCode').innerText);
-        alert("복사됨!");
+    function copyFullLink() {
+        const link = document.getElementById('generatedFullLink').innerText;
+        navigator.clipboard.writeText(link).then(() => alert("링크가 복사되었습니다!"));
+    }
+
+    function enterCreatedRoom() {
+        document.getElementById('globalRoomId').value = lastCreatedRoomId;
+        document.getElementById('globalPw').value = lastCreatedPw;
+        closeModal();
+        loadRoomData();
     }
 
     async function loadRoomData() {
         const rid = document.getElementById('globalRoomId').value;
+        if(!rid) return;
         const res = await fetch(`${API_BASE}/room/${rid}/data`);
-        if(!res.ok) return alert("방 없음");
+        if(!res.ok) return alert("방을 찾을 수 없습니다.");
         const data = await res.json();
         currentRoomId = rid;
         document.getElementById('mainContainer').style.display='block';
@@ -141,16 +198,23 @@
 
         Object.keys(grouped).sort((a,b)=>a-b).forEach(day => {
             const dayBox = document.createElement('div');
-            dayBox.innerHTML = `<h3>Day ${day} <button class="btn-route" onclick="openRoute(${day})" style="width:auto; padding:5px 10px; font-size:0.7rem;">🗺️ 이 날의 경로 구글맵으로 보기</button></h3>
-                                <ul id="list-day-${day}" data-day="${day}"></ul>`;
+            dayBox.className = "day-section";
+            dayBox.innerHTML = `
+                <div class="day-header">
+                    <h3>Day ${day}</h3>
+                    <button class="btn-route" onclick="openRoute(${day})">🗺️ 이 날의 경로 보기</button>
+                </div>
+                <ul class="schedule-list" id="list-day-${day}" data-day="${day}"></ul>`;
             groupsDiv.appendChild(dayBox);
             
             const ul = document.getElementById(`list-day-${day}`);
             grouped[day].forEach(s => {
-                ul.innerHTML += `<li data-id="${s.id}">
-                    <span class="handle">〓</span>
-                    <span class="badge badge-time">${s.time_str}</span>
-                    <div style="font-weight:bold; margin-top:5px;">${s.content}</div>
+                ul.innerHTML += `<li class="schedule-item" data-id="${s.id}">
+                    <div>
+                        <span style="color:#cbd5e0; margin-right:10px;">〓</span>
+                        <span class="badge badge-time">${s.time_str}</span>
+                    </div>
+                    <div style="font-weight:bold; margin-top:5px; font-size:1.1rem;">${s.content}</div>
                     <div class="link-btn-group">
                         ${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" class="link-btn">📍 지도</a>`:''}
                         ${s.tabelog_url ? `<a href="${s.tabelog_url}" target="_blank" class="link-btn">🍣 타베로그</a>`:''}
@@ -158,27 +222,22 @@
                 </li>`;
             });
 
-            // 드래그 기능 활성화 (방장 비번 있을 때만)
             if(document.getElementById('globalPw').value) {
-                new Sortable(ul, {
-                    handle: '.handle',
-                    animation: 150,
-                    onEnd: () => saveOrder(day)
-                });
+                new Sortable(ul, { animation: 150, onEnd: () => saveOrder(day) });
             }
         });
 
         // 참견 렌더링
         const sugUl = document.getElementById('suggestionList');
-        sugUl.innerHTML = data.suggestions.length ? "" : "추천 없음";
+        sugUl.innerHTML = "";
         data.suggestions.forEach(s => {
-            sugUl.innerHTML += `<li>
-                <span class="badge badge-name">${s.suggester_name}</span> ${s.status === '승인됨' ? '✅':''}
-                <div style="margin-top:5px;">${s.content}</div>
+            sugUl.innerHTML += `<li class="schedule-item" style="cursor:default;">
+                <span class="badge badge-name">🗣️ ${s.suggester_name}</span>
+                <div style="margin-top:5px; font-weight:600;">${s.content}</div>
                 <div class="vote-group">
-                    <button class="btn-v" onclick="vote(${s.id},'good')">👍 ${s.good_cnt}</button>
-                    <button class="btn-v" onclick="vote(${s.id},'bad')">👎 ${s.bad_cnt}</button>
-                    ${document.getElementById('globalPw').value ? `<button onclick="askApprove(${s.id})" style="background:#48bb78; color:white; border:none; padding:5px; border-radius:4px; font-size:0.7rem;">승인</button>` : ''}
+                    <button class="btn-vote" onclick="vote(${s.id},'good')">👍 ${s.good_cnt}</button>
+                    <button class="btn-vote" onclick="vote(${s.id},'bad')">👎 ${s.bad_cnt}</button>
+                    ${document.getElementById('globalPw').value ? `<button onclick="askApprove(${s.id})" style="background:#48bb78; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:0.8rem; margin-left:auto;">승인</button>` : ''}
                 </div>
             </li>`;
         });
@@ -197,14 +256,19 @@
     function openRoute(day) {
         const ul = document.getElementById(`list-day-${day}`);
         const links = Array.from(ul.querySelectorAll('a[href*="google.com/maps"]')).map(a => a.href);
-        if(!links.length) return alert("등록된 구글맵 링크가 없습니다.");
+        if(links.length < 2) return alert("경로를 보려면 최소 2개 이상의 구글 지도 링크가 필요합니다.");
         
-        // 구글 맵 경로 만들기 (장소 검색어 추출 시도)
-        const origin = encodeURIComponent(links[0]);
-        const destination = encodeURIComponent(links[links.length-1]);
-        const waypoints = links.slice(1, -1).map(l => encodeURIComponent(l)).join('|');
+        const locations = links.map(link => {
+            const match = link.match(/place\/([^\/]+)/);
+            return match ? match[1] : null;
+        }).filter(l => l);
+
+        if(locations.length < 2) return alert("유효한 장소 정보가 부족합니다.");
         
-        const routeUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}`;
+        const origin = locations[0];
+        const destination = locations[locations.length-1];
+        const waypoints = locations.slice(1, -1).join('|');
+        const routeUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=walking`;
         window.open(routeUrl, '_blank');
     }
 
@@ -219,7 +283,11 @@
         const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, {
             method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
         });
-        if(res.ok) loadRoomData(); else alert("권한 없음");
+        if(res.ok) { 
+            document.getElementById('schContent').value = ""; 
+            document.getElementById('schMap').value = "";
+            loadRoomData(); 
+        } else { alert("권한이 없거나 비밀번호가 틀렸습니다."); }
     }
 
     async function vote(id, type) {
@@ -228,17 +296,18 @@
     }
 
     function askApprove(id) {
-        const d = prompt("일차 (숫자)");
-        const t = prompt("시간 (예: 12:00)");
+        const d = prompt("승인할 일차를 입력하세요 (숫자)");
+        const t = prompt("시간을 입력하세요 (예: 12:00)");
         if(d && t) approve(id, d, t);
     }
+
     async function approve(id, day, time) {
         const password = document.getElementById('globalPw').value;
-        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, {
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, {
             method:"POST", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({password, day_num: parseInt(day), time_str: time})
         });
-        loadRoomData();
+        if(res.ok) loadRoomData(); else alert("승인 실패");
     }
 </script>
 </body>
