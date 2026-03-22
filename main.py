@@ -56,7 +56,7 @@ def get_db_connection():
 
 
 # ─────────────────────────────────────────────
-# 도시 ↔ 통화 매핑 (가고시마, 나고야 추가)
+# 도시 ↔ 통화 매핑
 # ─────────────────────────────────────────────
 CITY_CURRENCY_MAP = {
     "도쿄": "JPY", "오사카": "JPY", "나고야": "JPY", "후쿠오카": "JPY",
@@ -200,7 +200,7 @@ def get_current_role(
 
 
 # ─────────────────────────────────────────────
-# 비밀번호 검증 (규칙 변경: 영문/숫자 포함 6자 이상)
+# 비밀번호 검증 (영문/숫자 포함 6자 이상)
 # ─────────────────────────────────────────────
 ADMIN_PW_PATTERN = re.compile(
     r"^(?=.*[A-Za-z])(?=.*\d).{6,}$"
@@ -338,35 +338,39 @@ def login(req: LoginRequest):
 
 
 # ─────────────────────────────────────────────
-# 방(Room) API
+# 방(Room) API (예외 처리 추가됨)
 # ─────────────────────────────────────────────
 
 @app.post("/create_room", status_code=201)
 def create_room(room: RoomCreate):
-    rid = "".join(random.choices(string.ascii_letters + string.digits, k=12))
-    currency = resolve_currency(room.city or "", room.currency or "")
+    try:
+        rid = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+        currency = resolve_currency(room.city or "", room.currency or "")
 
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute(
-        """INSERT INTO room
-               (room_id, title, admin_pw, team_pw, city, currency, member_count, is_comment_enabled)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-        (
-            rid,
-            room.title,
-            hash_pw(room.admin_pw),
-            hash_pw(room.team_pw) if room.team_pw else "",
-            room.city or "",
-            currency,
-            room.member_count or 1,
-            room.is_comment_enabled,
-        ),
-    )
-    conn.commit()
-    c.close()
-    conn.close()
-    return {"room_id": rid}
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO room
+                   (room_id, title, admin_pw, team_pw, city, currency, member_count, is_comment_enabled)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                rid,
+                room.title,
+                hash_pw(room.admin_pw),
+                hash_pw(room.team_pw) if room.team_pw else "",
+                room.city or "",
+                currency,
+                room.member_count or 1,
+                room.is_comment_enabled,
+            ),
+        )
+        conn.commit()
+        c.close()
+        conn.close()
+        return {"room_id": rid}
+    except Exception as e:
+        # 서버에서 발생한 실제 에러를 프론트엔드로 전달합니다.
+        raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
 
 
 @app.get("/room/{room_id}/data")
