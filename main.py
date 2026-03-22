@@ -56,11 +56,11 @@ def get_db_connection():
 
 
 # ─────────────────────────────────────────────
-# 도시 ↔ 통화 매핑
+# 도시 ↔ 통화 매핑 (가고시마, 나고야 추가)
 # ─────────────────────────────────────────────
 CITY_CURRENCY_MAP = {
-    "도쿄": "JPY", "오사카": "JPY", "후쿠오카": "JPY",
-    "구마모토": "JPY", "삿포로": "JPY", "오키나와": "JPY",
+    "도쿄": "JPY", "오사카": "JPY", "나고야": "JPY", "후쿠오카": "JPY",
+    "구마모토": "JPY", "가고시마": "JPY", "삿포로": "JPY", "오키나와": "JPY",
     "타이베이": "TWD", "가오슝": "TWD",
 }
 
@@ -189,11 +189,6 @@ def get_current_role(
     room_id: str,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
 ) -> str:
-    """
-    JWT에서 role 추출.
-    토큰 없음 → 'guest'
-    토큰 있음 → 'admin' | 'team' | 'guest'
-    """
     if not credentials:
         return "guest"
     payload = decode_token(credentials.credentials)
@@ -205,10 +200,10 @@ def get_current_role(
 
 
 # ─────────────────────────────────────────────
-# 비밀번호 검증
+# 비밀번호 검증 (규칙 변경: 영문/숫자 포함 6자 이상)
 # ─────────────────────────────────────────────
 ADMIN_PW_PATTERN = re.compile(
-    r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$"
+    r"^(?=.*[A-Za-z])(?=.*\d).{6,}$"
 )
 
 
@@ -242,7 +237,7 @@ class RoomCreate(BaseModel):
     @validator("admin_pw")
     def validate_pw(cls, v):
         if not validate_admin_pw(v):
-            raise ValueError("비밀번호는 영문·숫자·특수문자를 포함하여 8자 이상이어야 합니다.")
+            raise ValueError("비밀번호는 영문과 숫자를 포함하여 6자 이상이어야 합니다.")
         return v
 
 
@@ -319,10 +314,6 @@ def serve_frontend(room_id: str = None):
 
 @app.post("/auth/login")
 def login(req: LoginRequest):
-    """
-    비밀번호로 로그인. admin_pw 일치 → role='admin', team_pw 일치 → role='team'.
-    JWT 토큰 반환.
-    """
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT admin_pw, team_pw FROM room WHERE room_id=%s", (req.room_id,))
@@ -450,7 +441,6 @@ def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentia
         for r in c.fetchall()
     ]
 
-    # 예산 합계
     total_budget = sum(s["budget"] for s in schedules if s["budget"] is not None)
 
     c.close()
@@ -476,7 +466,6 @@ def update_room_settings(
     req: RoomUpdate,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ):
-    """관리자 전용: 방 설정 변경"""
     role = get_current_role(room_id, credentials)
     if role != "admin":
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
@@ -748,7 +737,6 @@ def add_comment(room_id: str, sch_id: int, cm: CommentCreate):
     conn = get_db_connection()
     c = conn.cursor()
 
-    # 댓글 허용 여부 확인
     c.execute("SELECT is_comment_enabled FROM room WHERE room_id=%s", (room_id,))
     row = c.fetchone()
     if not row:
@@ -758,7 +746,6 @@ def add_comment(room_id: str, sch_id: int, cm: CommentCreate):
         c.close(); conn.close()
         raise HTTPException(status_code=403, detail="댓글 기능이 비활성화되어 있습니다.")
 
-    # 해당 일정이 이 방에 속하는지 확인
     c.execute("SELECT id FROM schedule WHERE id=%s AND room_id=%s", (sch_id, room_id))
     if not c.fetchone():
         c.close(); conn.close()
@@ -800,10 +787,6 @@ def delete_comment(
 
 @app.get("/room/{room_id}/budget_summary")
 def budget_summary(room_id: str, exchange_rate: Optional[float] = None):
-    """
-    exchange_rate: 1,000 KRW 당 현지 통화량 (수동 환율).
-    예) 100 → 1,000원 = 100엔
-    """
     conn = get_db_connection()
     c = conn.cursor()
 
