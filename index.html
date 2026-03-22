@@ -10,21 +10,15 @@
         .top-bar { background-color: #1e3a8a; color: white; padding: 15px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .top-bar h1 { margin: 0; font-size: 1.5rem; cursor: pointer; }
         .top-bar-inputs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; color: #333; }
+        .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; }
         .top-bar button { padding: 8px 16px; background-color: #ef4444; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
         .btn-create-room { background-color: #10b981 !important; margin-right: 10px; }
-        
         .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
         
-        /* 모달 스타일 수정 */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 450px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-        .modal-content h3 { margin-top: 0; color: #1e3a8a; margin-bottom: 20px; }
-        .modal-content label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 5px; margin-left: 2px; }
-        .modal-content input[type="text"], .modal-content input[type="password"] { width: 100%; box-sizing: border-box; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e0; border-radius: 8px; }
-        .modal-content .checkbox-group { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 0.95rem; cursor: pointer; }
-
-        .share-link-box { background: #f1f5f9; border: 1px dashed #2b6cb0; padding: 15px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-family: monospace; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 450px; }
+        .modal-content label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 5px; }
+        .modal-content input { width: 100%; box-sizing: border-box; padding: 12px; margin-bottom: 15px; border: 1px solid #cbd5e0; border-radius: 8px; }
         
         .tabs { display: flex; gap: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
         .tab-btn { padding: 12px 24px; background: #e2e8f0; color: #4a5568; border: none; border-radius: 8px 8px 0 0; font-weight: bold; cursor: pointer; }
@@ -33,14 +27,14 @@
         .tab-content.active { display: block; }
         
         .day-section { margin-bottom: 40px; }
-        .schedule-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; flex-direction: column; cursor: grab; }
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; width: fit-content; }
+        .schedule-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; margin-bottom: 12px; display: flex; flex-direction: column; cursor: grab; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; margin-bottom: 8px; width: fit-content; }
         .badge-time { background: #ebf8ff; color: #2b6cb0; }
-        .badge-name { background: #fff5f5; color: #c53030; }
         
         .btn-submit { width: 100%; padding: 14px; background: #2b6cb0; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        
-        @media print { .top-bar, .tabs, .export-actions, .admin-form { display: none !important; } }
+        .share-link-box { background: #f1f5f9; border: 1px dashed #2b6cb0; padding: 15px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-family: monospace; }
+
+        @media print { .top-bar, .tabs, .admin-form, .export-actions { display: none !important; } }
     </style>
 </head>
 <body>
@@ -58,29 +52,23 @@
 <div id="createRoomModal" class="modal-overlay">
     <div class="modal-content" id="modalForm">
         <h3>✨ 새 여행 방 만들기</h3>
-        
         <label>여행 제목</label>
         <input type="text" id="newRoomTitle" placeholder="예: 가고시마 3박 4일">
-        
-        <label>방장(관리자) 비밀번호 *</label>
-        <input type="password" id="newAdminPw" placeholder="영문/숫자/특수문자 포함 8자 이상">
-        
-        <label>동행자(편집) 비밀번호 (선택)</label>
-        <input type="password" id="newTeamPw" placeholder="동행자와 공유할 비번">
-        
-        <label class="checkbox-group">
-            <input type="checkbox" id="newSugOn" checked> 눈팅족 참견(추천) 기능 켜기
+        <label>관리자 비밀번호 (영/수/특 8자 이상)</label>
+        <input type="password" id="newAdminPw" placeholder="방장용 비밀번호">
+        <label>동행자 비밀번호 (선택)</label>
+        <input type="password" id="newTeamPw" placeholder="친구들과 공유할 비번">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:20px;">
+            <input type="checkbox" id="newSugOn" checked> 눈팅족 참견 기능 활성화
         </label>
-        
         <button onclick="submitCreateRoom()" class="btn-submit">생성하기</button>
         <button onclick="closeModal()" style="background:none; border:none; color:#666; width:100%; margin-top:10px; cursor:pointer;">취소</button>
     </div>
-
     <div class="modal-content" id="modalSuccess" style="display:none; text-align:center;">
-        <h3>🎉 방 생성 성공!</h3>
-        <p style="font-size:0.9rem; color:#666;">아래 링크를 동행자들에게 공유하세요.</p>
+        <h3>🎉 생성 성공!</h3>
+        <p>공유 링크:</p>
         <div class="share-link-box" id="fullShareLink"></div>
-        <button onclick="copyFullLink()" class="btn-submit" style="background:#10b981;">🔗 전체 링크 복사하기</button>
+        <button onclick="copyFullLink()" class="btn-submit" style="background:#10b981;">🔗 전체 링크 복사</button>
         <button onclick="enterCreatedRoom()" class="btn-submit" style="background:#2d3748; margin-top:10px;">바로 입장하기</button>
     </div>
 </div>
@@ -93,27 +81,34 @@
 
     <div id="tab-schedule" class="tab-content active">
         <div id="dayGroups"></div>
-        <div style="background:#f8fafc; padding:20px; border-radius:12px; border:1px dashed #cbd5e0; margin-top:20px;">
+        <div class="admin-form" style="background:#f8fafc; padding:20px; border-radius:12px; border:1px dashed #cbd5e0; margin-top:30px;">
             <h4 style="margin:0 0 15px 0;">+ 일정 추가</h4>
             <div style="display:flex; gap:10px; margin-bottom:10px;">
                 <select id="schDay" style="width:30%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
                     <script>for(let i=1;i<=15;i++)document.write(`<option value="${i}">${i}일차</option>`)</script>
                 </select>
-                <input type="text" id="schTime" placeholder="예: 14:00" style="width:70%; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin:0;">
+                <input type="text" id="schTime" placeholder="예: 14:00" style="width:70%; padding:10px; border-radius:6px; border:1px solid #cbd5e0;">
             </div>
-            <input type="text" id="schContent" placeholder="내용" style="width:100%; padding:12px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
-            <input type="text" id="schMap" placeholder="구글맵 링크 (선택)" style="width:100%; padding:12px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
+            <input type="text" id="schContent" placeholder="내용" style="width:100%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
+            <input type="text" id="schMap" placeholder="구글맵 링크" style="width:100%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
             <button onclick="addSchedule()" class="btn-submit">일정 등록</button>
         </div>
     </div>
 
     <div id="tab-suggestion" class="tab-content">
         <ul id="suggestionList" style="list-style:none; padding:0;"></ul>
+        <div class="admin-form" style="background:#f8fafc; padding:20px; border-radius:12px; border:1px dashed #cbd5e0; margin-top:20px;">
+            <h4 style="margin:0 0 15px 0;">+ 맛집 추천</h4>
+            <input type="text" id="sugName" placeholder="닉네임" style="width:100%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
+            <input type="text" id="sugContent" placeholder="추천 내용" style="width:100%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #cbd5e0; box-sizing:border-box;">
+            <button onclick="addSuggestion()" class="btn-submit" style="background:#ed8936;">추천 남기기</button>
+        </div>
     </div>
 </div>
 
 <script>
-    const API_BASE = ""; 
+    const API_BASE = "";
+    let currentRoomId = "";
     let lastAdminPw = "";
 
     window.onload = function() {
@@ -125,71 +120,27 @@
         }
     };
 
-    function openModal() { 
-        document.getElementById('modalForm').style.display='block';
-        document.getElementById('modalSuccess').style.display='none';
-        document.getElementById('createRoomModal').style.display='flex'; 
-    }
+    function openModal() { document.getElementById('modalForm').style.display='block'; document.getElementById('modalSuccess').style.display='none'; document.getElementById('createRoomModal').style.display='flex'; }
     function closeModal() { document.getElementById('createRoomModal').style.display='none'; }
-    function switchTab(id, btn) {
-        document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
-        btn.classList.add('active');
-    }
+    function switchTab(id, btn) { document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active')); document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); document.getElementById(id).classList.add('active'); btn.classList.add('active'); }
 
-    // 방 생성 로직 (에러 핸들링 추가)
     async function submitCreateRoom() {
         const title = document.getElementById('newRoomTitle').value;
         const admin_pw = document.getElementById('newAdminPw').value;
         const team_pw = document.getElementById('newTeamPw').value;
         const is_suggestion_on = document.getElementById('newSugOn').checked;
 
-        if(!title || !admin_pw) {
-            alert("제목과 방장 비밀번호는 필수입니다.");
-            return;
-        }
-
-        try {
-            const res = await fetch(`${API_BASE}/create_room`, {
-                method: "POST",
-                headers: {"Content-Type":"application/json"},
-                body: JSON.stringify({
-                    title: title,
-                    admin_pw: admin_pw,
-                    team_pw: team_pw,
-                    is_suggestion_on: is_suggestion_on
-                })
-            });
-
-            if(res.ok) {
-                const data = await res.json();
-                const fullLink = `${window.location.origin}/${data.room_id}`;
-                document.getElementById('fullShareLink').innerText = fullLink;
-                lastAdminPw = admin_pw;
-                document.getElementById('modalForm').style.display='none';
-                document.getElementById('modalSuccess').style.display='block';
-            } else {
-                const errData = await res.json();
-                // 서버의 비밀번호 유효성 검사 실패 시
-                alert("생성 실패: 방장 비밀번호는 영문, 숫자, 특수문자를 포함하여 8자 이상이어야 합니다.");
-            }
-        } catch(e) {
-            alert("서버 통신 에러가 발생했습니다.");
-        }
-    }
-
-    function copyFullLink() {
-        navigator.clipboard.writeText(document.getElementById('fullShareLink').innerText);
-        alert("공유 링크 복사 완료!");
-    }
-
-    function enterCreatedRoom() {
-        const fullLink = document.getElementById('fullShareLink').innerText;
-        document.getElementById('globalRoomId').value = fullLink.split('/').pop();
-        document.getElementById('globalPw').value = lastAdminPw;
-        closeModal();
-        loadRoomData();
+        const res = await fetch(`${API_BASE}/create_room`, {
+            method: "POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({title, admin_pw, team_pw, is_suggestion_on})
+        });
+        if(res.ok) {
+            const data = await res.json();
+            document.getElementById('fullShareLink').innerText = `${window.location.origin}/${data.room_id}`;
+            lastAdminPw = admin_pw;
+            document.getElementById('modalForm').style.display='none';
+            document.getElementById('modalSuccess').style.display='block';
+        } else { alert("비밀번호 규칙 위반 (영/수/특 8자 이상)"); }
     }
 
     async function loadRoomData() {
@@ -197,21 +148,14 @@
         const res = await fetch(`${API_BASE}/room/${rid}/data`);
         if(!res.ok) return;
         const data = await res.json();
+        currentRoomId = rid;
         document.getElementById('mainContainer').style.display='block';
         
-        // 데이터 렌더링 로직 (기존과 동일)
-        renderSchedules(data.schedules);
-        renderSuggestions(data.suggestions);
-    }
-
-    function renderSchedules(schedules) {
+        // 일정 렌더링
         const groupsDiv = document.getElementById('dayGroups');
         groupsDiv.innerHTML = "";
         const grouped = {};
-        schedules.forEach(s => {
-            if(!grouped[s.day_num]) grouped[s.day_num] = [];
-            grouped[s.day_num].push(s);
-        });
+        data.schedules.forEach(s => { if(!grouped[s.day_num]) grouped[s.day_num] = []; grouped[s.day_num].push(s); });
         Object.keys(grouped).sort((a,b)=>a-b).forEach(day => {
             const dayBox = document.createElement('div');
             dayBox.className = "day-section";
@@ -222,18 +166,25 @@
                 ul.innerHTML += `<li class="schedule-item" data-id="${s.id}">
                     <div><span class="badge badge-time">${s.time_str}</span></div>
                     <div style="font-weight:bold; margin-top:5px;">${s.content}</div>
+                    ${s.google_map_url ? `<div class="link-btn-group"><a href="${s.google_map_url}" target="_blank" class="link-btn">📍 지도</a></div>` : ''}
                 </li>`;
             });
-            if(document.getElementById('globalPw').value) {
-                new Sortable(ul, { animation: 150, onEnd: () => saveOrder(day) });
-            }
+            if(document.getElementById('globalPw').value) { new Sortable(ul, { animation: 150, onEnd: () => saveOrder(day) }); }
         });
-    }
 
-    function renderSuggestions(suggestions) {
+        // 참견 렌더링
         const sugUl = document.getElementById('suggestionList');
-        sugUl.innerHTML = suggestions.length ? "" : "등록된 추천이 없습니다.";
-        // ... (이하 생략)
+        sugUl.innerHTML = data.suggestions.length ? "" : "등록된 추천이 없습니다.";
+        data.suggestions.forEach(s => {
+            sugUl.innerHTML += `<li class="schedule-item" style="cursor:default;">
+                <span class="badge badge-name">🗣️ ${s.suggester_name}</span>
+                <div style="font-weight:600;">${s.content}</div>
+                <div style="margin-top:10px; display:flex; gap:10px;">
+                    <button onclick="vote(${s.id},'good')" style="border:1px solid #ddd; background:white; cursor:pointer; padding:5px 10px; border-radius:5px;">👍 ${s.good_cnt}</button>
+                    ${document.getElementById('globalPw').value ? `<button onclick="askApprove(${s.id})" style="background:#48bb78; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">승인</button>` : ''}
+                </div>
+            </li>`;
+        });
     }
 
     async function addSchedule() {
@@ -244,11 +195,31 @@
             google_map_url: document.getElementById('schMap').value,
             password: document.getElementById('globalPw').value
         };
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, {
-            method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
-        });
-        if(res.ok) loadRoomData(); else alert("비밀번호를 확인하세요.");
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+        if(res.ok) loadRoomData(); else alert("권한 없음");
     }
+
+    async function addSuggestion() {
+        const payload = { suggester_name: document.getElementById('sugName').value, content: document.getElementById('sugContent').value };
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+        if(res.ok) { document.getElementById('sugContent').value = ""; loadRoomData(); } else { alert("추천 불가 (방장이 껐거나 오류)"); }
+    }
+
+    async function vote(id, type) { await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/vote?type=${type}`, {method:"POST"}); loadRoomData(); }
+    function askApprove(id) { const d = prompt("일차 (숫자)"); const t = prompt("시간 (예: 12:00)"); if(d && t) approve(id, d, t); }
+    async function approve(id, d, t) { 
+        const password = document.getElementById('globalPw').value;
+        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password, day_num: parseInt(d), time_str: t}) });
+        loadRoomData();
+    }
+    async function saveOrder(day) {
+        const ul = document.getElementById(`list-day-${day}`);
+        const ids = Array.from(ul.querySelectorAll('li')).map(li => parseInt(li.dataset.id));
+        const password = document.getElementById('globalPw').value;
+        await fetch(`${API_BASE}/room/${currentRoomId}/reorder`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({password, new_order: ids}) });
+    }
+    function copyFullLink() { navigator.clipboard.writeText(document.getElementById('fullShareLink').innerText); alert("복사 완료!"); }
+    function enterCreatedRoom() { const fl = document.getElementById('fullShareLink').innerText; document.getElementById('globalRoomId').value = fl.split('/').pop(); document.getElementById('globalPw').value = lastAdminPw; closeModal(); loadRoomData(); }
 </script>
 </body>
 </html>
