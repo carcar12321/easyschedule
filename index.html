@@ -1,124 +1,169 @@
-<!-- 기존 HTML 구조 유지, 필요한 부분만 업데이트 -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <!-- CSS 추가: 구글 정보 관련 스타일 -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy Schedule Pro 🎒</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
+        /* 기존 스타일 생략 (이전 답변 스타일 그대로 유지) */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f0f4f8; margin: 0; padding: 0; }
         .badge-rating { background: #fffbeb; color: #b45309; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; border: 1px solid #fde68a; }
-        .badge-open { background: #ecfdf5; color: #059669; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-        .badge-closed { background: #fef2f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-        .travel-time-box { margin-left: 120px; padding: 8px; color: #4b5563; font-size: 0.8rem; border-left: 2px dashed #cbd5e0; display: flex; align-items: center; gap: 5px; }
-        .ai-card { background: linear-gradient(to right, #ffffff, #f0f9ff); border-left: 4px solid #3b82f6; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
-        .floating-menu { bottom: 80px !important; } /* 위치 조정 */
+        .travel-time-box { margin: 10px 0 10px 120px; padding: 8px; color: #4b5563; font-size: 0.85rem; border-left: 3px dashed #cbd5e0; display: flex; align-items: center; gap: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; }
+        .ai-card { background: white; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .floating-menu { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; }
+        .float-btn { padding: 12px 18px; border-radius: 50px; border: none; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
 
-<!-- (중략: 기존 UI 요소들) -->
-
-<!-- 플로팅 메뉴 업데이트 -->
-<div class="floating-menu" id="gpsMenu" style="display:flex;">
-    <button class="float-btn" style="background:#3b82f6;" onclick="handleGPS('restaurant')">🍴 AI 식당추천</button>
-    <button class="float-btn" style="background:#475569;" onclick="handleGPS('smoking')">🚬 주변 흡연장소</button>
-    <button class="float-btn" style="background:#10b981;" onclick="handleGPS('convenience')">🏪 편의점 찾기</button>
+<div class="top-bar">
+    <h1 onclick="location.href='/'">🎒 Easy Schedule</h1>
+    <div class="top-bar-inputs">
+        <input type="text" id="loginRoomId" placeholder="방 ID">
+        <input type="password" id="loginPw" placeholder="비밀번호">
+        <button class="btn-login" onclick="login()">입장</button>
+    </div>
 </div>
 
-<!-- 이동시간 계산 버튼 (DAY 헤더 옆에 추가 예정) -->
-<div id="dayGroups"></div>
+<div class="container" id="mainContainer" style="display:none;">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-schedule', this)">📅 일정</button>
+        <button class="tab-btn" onclick="switchTab('tab-suggestion', this)">🙋‍♂️ 훈수맨</button>
+        <button class="tab-btn" onclick="switchTab('tab-admin', this)">⚙️ 설정</button>
+    </div>
+
+    <!-- 일정 탭 -->
+    <div id="tab-schedule" class="tab-content active">
+        <div id="dayGroups"></div>
+    </div>
+
+    <!-- 설정 탭 (개인 API 키 입력 추가) -->
+    <div id="tab-admin" class="tab-content">
+        <div class="admin-box" style="background: #fff4ed; border: 1px solid #ffedd5;">
+            <h4 style="color: #9a3412;">🔑 개인 Google API 키 설정</h4>
+            <p style="font-size: 0.8rem; color: #c2410c;">본인의 API 키를 입력하면 이동시간 계산, AI 추천 기능이 활성화됩니다.</p>
+            <div style="display:flex; gap:10px;">
+                <input type="password" id="userApiKey" placeholder="AIzaSy..." style="flex:1; padding:10px; border-radius:8px; border:1px solid #ddd;">
+                <button class="btn-action" style="background:#ea580c; color:white; padding:10px 20px;" onclick="saveApiKey()">키 저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- GPS 퀵 메뉴 -->
+<div class="floating-menu" id="gpsMenu" style="display:none;">
+    <button class="float-btn" style="background:#3b82f6;" onclick="handleGPS('restaurant')">🍴 맛집추천</button>
+    <button class="float-btn" style="background:#475569;" onclick="handleGPS('smoking')">🚬 흡연실</button>
+    <button class="float-btn" style="background:#10b981;" onclick="handleGPS('convenience')">🏪 편의점</button>
+</div>
+
+<!-- 결과 표시 모달 -->
+<div id="resultModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; z-index:2001; padding:20px; border-radius:15px; width:90%; max-width:400px; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+    <h3 id="modalTitle">📍 검색 결과</h3>
+    <div id="modalBody" style="max-height:400px; overflow-y:auto; margin-bottom:15px;"></div>
+    <button onclick="document.getElementById('resultModal').style.display='none'" style="width:100%; padding:10px; background:#eee; border:none; border-radius:8px;">닫기</button>
+</div>
 
 <script>
-    // GPS 및 Google API 연동 함수
-    async function handleGPS(type) {
-        if (!navigator.geolocation) return alert("GPS를 지원하지 않는 브라우저입니다.");
-        
+    let currentRoomId = "";
+
+    // API 키 저장 및 로드
+    function saveApiKey() {
+        const key = document.getElementById('userApiKey').value.trim();
+        localStorage.setItem('my_google_api_key', key);
+        alert("저장되었습니다.");
+        location.reload();
+    }
+
+    window.onload = () => {
+        const key = localStorage.getItem('my_google_api_key');
+        if(key) document.getElementById('userApiKey').value = key;
+        // 초기 로드 로직 호출...
+    };
+
+    // 공통 헤더 (토큰 + 구글 키 포함)
+    function getAuthHeaders() {
+        const headers = { "Content-Type": "application/json" };
+        const token = localStorage.getItem(`easytrip_token_${currentRoomId}`);
+        const googleKey = localStorage.getItem('my_google_api_key');
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        if (googleKey) headers["X-Google-Api-Key"] = googleKey;
+        return headers;
+    }
+
+    // GPS 주변 검색
+    function handleGPS(type) {
+        if (!navigator.geolocation) return alert("GPS를 켜주세요.");
         navigator.geolocation.getCurrentPosition(async (pos) => {
             const { latitude, longitude } = pos.coords;
-            const res = await fetch(`/api/nearby?lat=${latitude}&lng=${longitude}&type=${type}`);
+            const res = await fetch(`/api/nearby?lat=${latitude}&lng=${longitude}&type=${type}`, { headers: getAuthHeaders() });
             const data = await res.json();
             
-            let html = `<div style="text-align:left;">`;
-            if (data.results.length === 0) html += "<p>주변에 검색된 장소가 없습니다.</p>";
-            
+            let html = "";
             data.results.forEach(r => {
-                const rating = r.rating ? `⭐️${r.rating}` : '';
-                const aiDesc = r.ai_desc ? `<p style="font-size:0.85rem; color:#2563eb; margin:5px 0;">✨ ${r.ai_desc}</p>` : '';
-                html += `
-                    <div class="ai-card">
-                        <strong>${r.name}</strong> <span class="badge-rating">${rating}</span>
-                        ${aiDesc}
-                        <a href="https://www.google.com/maps/search/?api=1&query=${r.name}&query_place_id=${r.place_id}" target="_blank" style="font-size:0.8rem; color:#666;">구글맵 보기</a>
-                    </div>`;
+                html += `<div class="ai-card"><strong>${r.name}</strong> <span class="badge-rating">⭐️${r.rating||'0'}</span><br>
+                         <p style="font-size:0.8rem; color:#666;">${r.ai_desc||'가장 가까운 장소입니다.'}</p>
+                         <a href="https://www.google.com/maps/search/?api=1&query=${r.name}" target="_blank">지도 보기</a></div>`;
             });
-            html += `</div>`;
-            
-            // 결과를 모달이나 커스텀 팝업으로 표시 (alert 대신 커스텀 UI 권장)
-            showModal("📍 주변 검색 결과", html);
+            document.getElementById('modalBody').innerHTML = html || "결과가 없습니다.";
+            document.getElementById('resultModal').style.display = "block";
         });
     }
 
-    // 이동 시간 계산 버튼 실행
+    // 이동 시간 계산
     async function calculateDayTransit(day) {
         const items = Array.from(document.querySelectorAll(`#list-day-${day} .tl-item`));
         for (let i = 0; i < items.length - 1; i++) {
             const originId = items[i].dataset.placeid;
             const destId = items[i+1].dataset.placeid;
-            
-            if (originId && destId && originId !== 'null' && destId !== 'null') {
-                const res = await fetch(`/api/travel_time?origin=${originId}&dest=${destId}`);
+            if (originId && destId && originId !== 'null') {
+                const res = await fetch(`/api/travel_time?origin=${originId}&dest=${destId}`, { headers: getAuthHeaders() });
                 const data = await res.json();
                 if (data.duration) {
-                    const transitDiv = document.createElement('div');
-                    transitDiv.className = 'travel-time-box';
-                    transitDiv.innerHTML = `🚌 대중교통 약 <b>${data.duration}</b> (${data.distance})`;
-                    items[i].after(transitDiv);
+                    const div = document.createElement('div');
+                    div.className = 'travel-time-box';
+                    div.innerHTML = `🚌 대중교통 <b>${data.duration}</b> (${data.distance})`;
+                    items[i].after(div);
                 }
             }
         }
     }
 
-    // 일정 렌더링 시 별점 및 영업시간 뱃지 추가 (기존 renderSchedules 수정)
-    function renderSchedules(schedules, isCommentOn) {
-        const groupsDiv = document.getElementById('dayGroups'); 
-        groupsDiv.innerHTML = "";
-        const grouped = {}; 
-        schedules.forEach(s => { if(!grouped[s.day_num]) grouped[s.day_num] = []; grouped[s.day_num].push(s); });
+    // 일정 렌더링 (기존 코드 수정판)
+    function renderSchedules(schedules) {
+        const dayDiv = document.getElementById('dayGroups');
+        dayDiv.innerHTML = "";
+        const grouped = {}; schedules.forEach(s => { if(!grouped[s.day_num]) grouped[s.day_num] = []; grouped[s.day_num].push(s); });
 
         Object.keys(grouped).forEach(day => {
-            const dayBox = document.createElement('div'); dayBox.className = "day-block";
-            dayBox.innerHTML = `
+            const box = document.createElement('div');
+            box.className = "day-block";
+            box.innerHTML = `
                 <div class="day-header">
                     <span>DAY ${day}</span>
-                    <button onclick="calculateDayTransit(${day})" style="font-size:0.7rem; background:#4a5568; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">⏱️ 이동시간 계산</button>
+                    <button onclick="calculateDayTransit(${day})" style="background:#4a5568; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-size:0.7rem;">⏱️ 이동시간 계산</button>
                 </div>
                 <ul class="timeline" id="list-day-${day}"></ul>`;
-            groupsDiv.appendChild(dayBox);
+            dayDiv.appendChild(box);
             
             const ul = document.getElementById(`list-day-${day}`);
             grouped[day].forEach(s => {
                 const ratingBadge = s.rating ? `<span class="badge-rating">⭐️ ${s.rating}</span>` : '';
-                // place_id가 있을 경우에만 data-placeid 속성 추가
                 ul.innerHTML += `
                     <li class="tl-item" data-id="${s.id}" data-placeid="${s.place_id}">
                         <div class="tl-time">${s.start_time}<br>~<br>${s.end_time}</div>
                         <div class="tl-content">
-                            <div class="tl-label">${s.content} ${ratingBadge}</div>
-                            <!-- (중략: 기존 코드와 동일한 버튼 및 댓글 로직) -->
+                            <div style="font-weight:bold; font-size:1.1rem;">${s.content} ${ratingBadge}</div>
+                            <div style="margin-top:5px;">${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" style="color:#2563eb; font-size:0.8rem;">📍 지도보기</a>` : ''}</div>
                         </div>
                     </li>`;
             });
         });
     }
 
-    // 모달창 띄우기 유틸리티
-    function showModal(title, content) {
-        // 기존 createRoomModal의 구조를 재활용하여 결과창을 띄우는 로직 구현
-        alert(title + "\n" + "결과는 화면 하단 혹은 로그를 확인해주세요. (실제 구현 시 전용 모달 HTML 추가)");
-        // 임시: 로그에 출력하거나 특정 div에 넣기
-        const resultDiv = document.createElement('div');
-        resultDiv.style = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:white; z-index:2000; padding:20px; border-radius:12px; box-shadow:0 0 20px rgba(0,0,0,0.3); width:90%; max-width:400px;";
-        resultDiv.innerHTML = `<h3>${title}</h3>${content}<button onclick="this.parentElement.remove()" class="btn-submit">닫기</button>`;
-        document.body.appendChild(resultDiv);
-    }
+    // (나머지 탭 전환, 로그인 등 기본 기능 코드는 기존과 동일하게 유지)
 </script>
 </body>
 </html>
