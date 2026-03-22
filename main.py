@@ -77,7 +77,9 @@ class ApproveRequest(BaseModel):
 
 # --- API ---
 @app.get("/")
-def serve_home(): return FileResponse("index.html")
+@app.get("/{room_id}") # 주소 뒤에 뭐가 붙어도 index.html을 던져줌
+def serve_home(room_id: str = None):
+    return FileResponse("index.html")
 
 @app.post("/create_room")
 def create_room(room: RoomCreate):
