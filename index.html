@@ -3,20 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy Schedule 🎒</title>
+    <title>Easy Trip 🎒</title>
     <style>
         /* 기본 스타일 세팅 */
         body { font-family: 'Noto Sans KR', sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; color: #333; }
         
-        /* 상단 고정 네비게이션 바 (로그인/설정 영역) */
+        /* 상단 고정 네비게이션 바 */
         .top-bar { background-color: #1e3a8a; color: white; padding: 15px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .top-bar h1 { margin: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
         .top-bar-inputs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; }
         .top-bar button { padding: 8px 16px; background-color: #ef4444; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         .top-bar button:hover { background-color: #dc2626; }
+        
+        /* 방 만들기 버튼 특별 스타일 */
+        .btn-create-room { background-color: #10b981 !important; margin-left: 15px; }
+        .btn-create-room:hover { background-color: #059669 !important; }
 
-        .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
+        .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
+        
+        /* 팝업(모달) 스타일 */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-content h3 { margin-top: 0; color: #1e3a8a; margin-bottom: 20px; }
+        .modal-content input[type="text"], .modal-content input[type="password"] { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 15px; border: 1px solid #cbd5e0; border-radius: 6px; }
+        .modal-content label { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 0.95rem; color: #4a5568; cursor: pointer; }
+        .modal-actions { display: flex; gap: 10px; }
+        .modal-actions button { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-submit { background-color: #2b6cb0; color: white; }
+        .btn-cancel { background-color: #e2e8f0; color: #4a5568; }
+
+        /* 바로가기 퀵링크 영역 */
+        .quick-links { display: flex; gap: 10px; margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         
         /* 탭 메뉴 스타일 */
         .tabs { display: flex; gap: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
@@ -38,7 +56,7 @@
         .badge-name { background: #fff5f5; color: #c53030; }
         
         .link-btn-group { display: flex; gap: 8px; margin-top: 10px; }
-        .link-btn { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; text-decoration: none; text-align: center; }
+        .link-btn { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; text-decoration: none; text-align: center; display: inline-block; }
         .btn-google { background: #e2e8f0; color: #4a5568; }
         .btn-tabelog { background: #fed7d7; color: #c53030; }
         
@@ -55,15 +73,41 @@
 <body>
 
 <div class="top-bar">
-    <h1>🎒 Easy Schedule</h1>
+    <div>
+        <h1>🎒 Easy Trip <button onclick="openModal()" class="btn-create-room">+ 새 여행 방 만들기</button></h1>
+    </div>
     <div class="top-bar-inputs">
-        <input type="text" id="globalRoomId" placeholder="방 ID 입력 (예: sXprCt8Gxjkq)">
+        <input type="text" id="globalRoomId" placeholder="방 ID 입력 (예: sXprCt...)">
         <input type="password" id="globalPw" placeholder="비밀번호 (눈팅족은 생략)">
         <button onclick="loadRoomData()">🚀 입장 / 새로고침</button>
     </div>
 </div>
 
+<div id="createRoomModal" class="modal-overlay">
+    <div class="modal-content">
+        <h3>✨ 새로운 여행 방 만들기</h3>
+        <input type="text" id="newRoomTitle" placeholder="여행 제목 (예: 오사카 3박 4일 먹방)">
+        <input type="password" id="newAdminPw" placeholder="방장 비번 (영문,숫자,특수기호 포함 8자 이상)">
+        <input type="password" id="newTeamPw" placeholder="동행자 비번 (선택사항)">
+        <label>
+            <input type="checkbox" id="newSugOn" checked>
+            눈팅족 참견(추천) 기능 켜기
+        </label>
+        <div class="modal-actions">
+            <button onclick="submitCreateRoom()" class="btn-submit">방 만들기</button>
+            <button onclick="closeModal()" class="btn-cancel">취소</button>
+        </div>
+    </div>
+</div>
+
 <div class="container" id="mainContainer" style="display: none;">
+    
+    <div class="quick-links">
+        <span style="font-weight: bold; color: #4a5568; padding-top: 5px;">⚡ 빠른 검색 :</span>
+        <a href="https://maps.google.com" target="_blank" class="link-btn btn-google">🗺️ 구글 지도 열기</a>
+        <a href="https://tabelog.com" target="_blank" class="link-btn btn-tabelog">🍣 타베로그 열기</a>
+    </div>
+
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('tab-schedule', this)">📅 확정된 일정</button>
         <button class="tab-btn" onclick="switchTab('tab-suggestion', this)">🙋‍♂️ 눈팅족 참견 탭</button>
@@ -78,11 +122,8 @@
             <div class="flex-row">
                 <select id="schDay" style="width: 25%;">
                     <option value="" disabled selected>일차 선택</option>
-                    <script>
-                        for(let i=1; i<=15; i++) document.write(`<option value="${i}">${i}일차</option>`);
-                    </script>
+                    <script>for(let i=1; i<=15; i++) document.write(`<option value="${i}">${i}일차</option>`);</script>
                 </select>
-                
                 <select id="schHour" style="width: 25%;">
                     <option value="" disabled selected>시간</option>
                     <script>
@@ -92,7 +133,6 @@
                         }
                     </script>
                 </select>
-                
                 <input type="number" id="schMinute" placeholder="분 (00~59)" min="0" max="59" style="width: 50%;">
             </div>
             <input type="text" id="schContent" placeholder="일정 내용 (예: 흑돼지 돈카츠 방문)" style="margin-bottom: 10px;">
@@ -122,8 +162,64 @@
 </div>
 
 <script>
-    const API_BASE = "";
+    // 배포 시에는 상대경로("")를 사용해서 현재 서버 주소를 자동으로 따라가게 합니다.
+    const API_BASE = ""; 
     let currentRoomId = "";
+
+    // 모달(팝업) 열기/닫기 기능
+    function openModal() { document.getElementById('createRoomModal').style.display = 'flex'; }
+    function closeModal() { document.getElementById('createRoomModal').style.display = 'none'; }
+
+    // 방 만들기 API 호출
+    async function submitCreateRoom() {
+        const title = document.getElementById('newRoomTitle').value;
+        const admin_pw = document.getElementById('newAdminPw').value;
+        const team_pw = document.getElementById('newTeamPw').value;
+        const is_suggestion_on = document.getElementById('newSugOn').checked;
+
+        if (!title || !admin_pw) {
+            alert("여행 제목과 방장 비밀번호는 필수입니다.");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/create_room`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: title,
+                    admin_pw: admin_pw,
+                    team_pw: team_pw,
+                    is_private: false,
+                    view_pw: "",
+                    is_suggestion_on: is_suggestion_on
+                })
+            });
+
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert(`방이 성공적으로 생성되었습니다!\n[방 ID: ${data.room_id}]\n\n이 코드를 친구들에게 공유하세요.`);
+                closeModal();
+                
+                // 생성된 방 ID와 비번을 상단 로그인 바에 자동 세팅하고 바로 입장
+                document.getElementById('globalRoomId').value = data.room_id;
+                document.getElementById('globalPw').value = admin_pw;
+                
+                // 입력폼 초기화
+                document.getElementById('newRoomTitle').value = "";
+                document.getElementById('newAdminPw').value = "";
+                document.getElementById('newTeamPw').value = "";
+                
+                loadRoomData();
+            } else {
+                // 백엔드 정규식(영문,숫자,특문 8자 이상) 통과 못했을 때 에러 메시지
+                alert(`생성 실패: 방장 비밀번호는 영문, 숫자, 특수문자를 포함해 8자 이상이어야 합니다.`);
+            }
+        } catch (error) {
+            alert("서버 연결에 실패했습니다.");
+        }
+    }
 
     // 탭 전환 기능
     function switchTab(tabId, btnElement) {
@@ -134,7 +230,7 @@
         btnElement.classList.add('active');
     }
 
-    // 데이터 불러오기
+    // 방 데이터 불러오기
     async function loadRoomData() {
         const roomId = document.getElementById("globalRoomId").value.trim();
         if (!roomId) {
@@ -194,15 +290,14 @@
         }
     }
 
-    // 일정 추가 로직 (시간 유효성 검사 및 전역 비밀번호 사용)
+    // 일정 추가 로직
     async function addSchedule() {
         const day_num = document.getElementById("schDay").value;
         const hour = document.getElementById("schHour").value;
         const minInput = document.getElementById("schMinute").value;
         const content = document.getElementById("schContent").value;
-        const password = document.getElementById("globalPw").value; // 상단 바 비밀번호 가져오기
+        const password = document.getElementById("globalPw").value;
 
-        // 1. 필수값 검사
         if (!day_num || !hour || minInput === "" || !content) {
             alert("일차, 시간, 분, 내용을 모두 입력해주세요.");
             return;
@@ -212,16 +307,13 @@
             return;
         }
 
-        // 2. 분(Minute) 유효성 검사 (0~59)
         const minNum = parseInt(minInput, 10);
         if (isNaN(minNum) || minNum < 0 || minNum > 59) {
             alert("분은 00에서 59 사이의 숫자로 올바르게 입력해주세요.");
             return;
         }
 
-        // 시간 포맷 조립 (예: "18" + "05" -> "18:05")
         const time_str = `${hour}:${minNum.toString().padStart(2, '0')}`;
-
         const payload = {
             day_num: parseInt(day_num),
             time_str: time_str,
@@ -240,9 +332,10 @@
 
             if (res.ok) {
                 alert("일정이 성공적으로 등록되었습니다.");
-                // 입력창 초기화
                 document.getElementById("schContent").value = "";
                 document.getElementById("schMinute").value = "";
+                document.getElementById("schGoogleMap").value = "";
+                document.getElementById("schTabelog").value = "";
                 loadRoomData();
             } else {
                 alert("비밀번호가 틀렸거나 권한이 없습니다.");
@@ -277,6 +370,8 @@
                 alert("추천이 등록되었습니다!");
                 document.getElementById("sugName").value = "";
                 document.getElementById("sugContent").value = "";
+                document.getElementById("sugGoogleMap").value = "";
+                document.getElementById("sugTabelog").value = "";
                 loadRoomData();
             } else {
                 alert("추천 등록에 실패했습니다.");
