@@ -188,8 +188,10 @@
             <optgroup label="일본 (JPY)">
                 <option value="도쿄">도쿄</option>
                 <option value="오사카">오사카</option>
+                <option value="나고야">나고야</option>
                 <option value="후쿠오카">후쿠오카</option>
                 <option value="구마모토">구마모토</option>
+                <option value="가고시마">가고시마</option>
                 <option value="삿포로">삿포로</option>
                 <option value="오키나와">오키나와</option>
             </optgroup>
@@ -204,7 +206,7 @@
             <input type="text" id="customCurrency" placeholder="통화코드 (예: USD)" style="width:50%;">
         </div>
 
-        <label>관리자 비밀번호 * (영/수/특 8자 이상)</label>
+        <label>관리자 비밀번호 * (영문/숫자 포함 6자 이상)</label>
         <input type="password" id="newAdminPw" placeholder="방장용 비밀번호">
         <label>동행자 비밀번호 (선택)</label>
         <input type="password" id="newTeamPw" placeholder="편집 권한 공유용">
@@ -280,12 +282,12 @@
             navigator.geolocation.getCurrentPosition(function(pos) {
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
-                window.open(`https://www.google.com/maps/search/${keyword}/@${lat},${lng},15z`);
+                window.open(`https://www.google.com/maps/search/$${keyword}/@${lat},${lng},15z`);
             }, function() {
-                window.open(`https://www.google.com/maps/search/${keyword}`);
+                window.open(`https://www.google.com/maps/search/$${keyword}`);
             });
         } else {
-            window.open(`https://www.google.com/maps/search/${keyword}`);
+            window.open(`https://www.google.com/maps/search/$${keyword}`);
         }
     }
 
@@ -378,7 +380,7 @@
                 document.getElementById('loginRoomId').value = data.room_id;
                 document.getElementById('loginPw').value = admin_pw;
             } else {
-                alert("생성 실패: 비밀번호는 영문, 숫자, 특수문자를 포함해 8자 이상이어야 합니다.");
+                alert("생성 실패: 비밀번호는 영문, 숫자를 포함해 6자 이상이어야 합니다.");
             }
         } catch(e) { alert("서버 통신 오류"); }
     }
