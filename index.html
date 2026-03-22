@@ -147,4 +147,533 @@
             <label>인원수 수정</label>
             <input type="number" id="adminMemberCount" min="1">
             <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                <input type="checkbox" id="adminCommentToggle" style="width:
+                <input type="checkbox" id="adminCommentToggle" style="width:auto;"> 훈수맨 일정별 댓글 허용
+            </label>
+            <button class="btn-submit" onclick="updateRoomSettings()">설정 저장</button>
+        </div>
+
+        <div class="admin-box">
+            <h4>+ 확정 일정 추가</h4>
+            <div style="display:flex; gap:10px; margin-bottom:15px;">
+                <select id="schDay" style="width:30%;">
+                    <script>for(let i=1;i<=15;i++)document.write(`<option value="${i}">${i}일차</option>`)</script>
+                </select>
+                <select id="schHour" style="width:35%;">
+                    <script>for(let i=0;i<24;i++)document.write(`<option value="${String(i).padStart(2,'0')}">${String(i).padStart(2,'0')}시</option>`)</script>
+                </select>
+                <input type="number" id="schMinute" placeholder="분(0~59)" min="0" max="59" style="width:35%; margin:0;">
+            </div>
+            <input type="text" id="schContent" placeholder="일정 내용">
+            <input type="number" id="schBudget" placeholder="예산 (선택, 숫자만 입력)">
+            <input type="text" id="schMap" placeholder="구글맵 링크 (선택)">
+            <input type="text" id="schTabelog" placeholder="타베로그 링크 (선택)">
+            <button class="btn-submit" style="background:#10b981;" onclick="addSchedule()">일정 등록</button>
+        </div>
+    </div>
+</div>
+
+<div class="floating-menu" id="quickSearchMenu" style="display:none;">
+    <button class="float-btn" onclick="quickSearch('편의점')">🏪 편의점 찾기</button>
+    <button class="float-btn smoke" onclick="quickSearch('흡연 구역')">🚬 흡연구역 찾기</button>
+</div>
+
+<div id="createRoomModal" class="modal-overlay">
+    <div class="modal-content" id="modalForm">
+        <h3>✨ 새 여행 방 만들기</h3>
+        <label>여행 제목 *</label>
+        <input type="text" id="newTitle" placeholder="예: 가고시마 먹방투어">
+        
+        <label>도시 및 통화 선택 *</label>
+        <select id="newCitySelect" onchange="toggleCustomCity()">
+            <optgroup label="일본 (JPY)">
+                <option value="도쿄">도쿄</option>
+                <option value="오사카">오사카</option>
+                <option value="후쿠오카">후쿠오카</option>
+                <option value="구마모토">구마모토</option>
+                <option value="삿포로">삿포로</option>
+                <option value="오키나와">오키나와</option>
+            </optgroup>
+            <optgroup label="대만 (TWD)">
+                <option value="타이베이">타이베이</option>
+                <option value="가오슝">가오슝</option>
+            </optgroup>
+            <option value="OTHER">기타 (직접 입력)</option>
+        </select>
+        <div id="customCityDiv" style="display:none; gap:10px;">
+            <input type="text" id="customCity" placeholder="도시명" style="width:50%;">
+            <input type="text" id="customCurrency" placeholder="통화코드 (예: USD)" style="width:50%;">
+        </div>
+
+        <label>관리자 비밀번호 * (영/수/특 8자 이상)</label>
+        <input type="password" id="newAdminPw" placeholder="방장용 비밀번호">
+        <label>동행자 비밀번호 (선택)</label>
+        <input type="password" id="newTeamPw" placeholder="편집 권한 공유용">
+        <label>참가 인원수</label>
+        <input type="number" id="newMemberCount" value="1" min="1">
+        
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:20px;">
+            <input type="checkbox" id="newCommentOn" checked style="width:auto; margin:0;"> 훈수맨 일정별 댓글 허용
+        </label>
+        
+        <button class="btn-submit" onclick="submitCreateRoom()">방 생성하기</button>
+        <button onclick="closeModal()" style="background:none; border:none; color:#666; width:100%; margin-top:10px; cursor:pointer;">취소</button>
+    </div>
+
+    <div class="modal-content" id="modalSuccess" style="display:none; text-align:center;">
+        <h3>🎉 생성 성공!</h3>
+        <p>친구들과 아래 링크를 공유하세요.</p>
+        <div class="share-link-box" id="fullShareLink"></div>
+        <button class="btn-submit" style="background:#10b981; margin-bottom:10px;" onclick="copyLink()">🔗 링크 복사</button>
+        <button class="btn-submit" style="background:#2d3748;" onclick="enterAfterCreate()">바로 입장</button>
+    </div>
+</div>
+
+<script>
+    const API_BASE = ""; // Render 동일 도메인 사용 시 비워둠
+    let currentRoomId = "";
+    let currentRole = "guest";
+    let currentCurrency = "";
+    let roomSettings = {};
+
+    window.onload = function() {
+        const path = window.location.pathname;
+        const rid = path.split('/')[1];
+        if (rid && rid.length === 12) {
+            document.getElementById('loginRoomId').value = rid;
+            checkSessionAndLoad(rid);
+        }
+    };
+
+    // --- UI/UX 기능 ---
+    function switchTab(id, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    function toggleCleanView() {
+        document.body.classList.toggle('clean-view');
+        const btn = document.getElementById('cleanViewBtn');
+        btn.innerText = document.body.classList.contains('clean-view') ? "✏️ 편집 모드 복귀" : "✨ 여행기 모드 토글";
+    }
+
+    function toggleCustomCity() {
+        const sel = document.getElementById('newCitySelect').value;
+        document.getElementById('customCityDiv').style.display = sel === 'OTHER' ? 'flex' : 'none';
+    }
+
+    function openCreateModal() {
+        document.getElementById('modalForm').style.display = 'block';
+        document.getElementById('modalSuccess').style.display = 'none';
+        document.getElementById('createRoomModal').style.display = 'flex';
+    }
+    function closeModal() { document.getElementById('createRoomModal').style.display = 'none'; }
+    
+    function copyLink() {
+        navigator.clipboard.writeText(document.getElementById('fullShareLink').innerText);
+        alert("링크가 복사되었습니다!");
+    }
+
+    function quickSearch(keyword) {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(function(pos) {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                window.open(`https://www.google.com/maps/search/${keyword}/@${lat},${lng},15z`);
+            }, function() {
+                window.open(`https://www.google.com/maps/search/${keyword}`);
+            });
+        } else {
+            window.open(`https://www.google.com/maps/search/${keyword}`);
+        }
+    }
+
+    // --- 통신 및 인증 로직 ---
+    function getToken() { return localStorage.getItem(`easytrip_token_${currentRoomId}`); }
+    function setToken(rid, token) { localStorage.setItem(`easytrip_token_${rid}`, token); }
+    function clearToken() { localStorage.removeItem(`easytrip_token_${currentRoomId}`); }
+
+    function getAuthHeaders() {
+        const token = getToken();
+        return token ? { "Content-Type": "application/json", "Authorization": `Bearer ${token}` } : { "Content-Type": "application/json" };
+    }
+
+    async function checkSessionAndLoad(rid) {
+        currentRoomId = rid;
+        document.getElementById('loginRoomId').value = rid;
+        await loadRoomData();
+    }
+
+    async function login() {
+        const rid = document.getElementById('loginRoomId').value;
+        const pw = document.getElementById('loginPw').value;
+        if (!rid) return alert("방 ID를 입력하세요.");
+        
+        if (!pw) {
+            // 비번 없이 조회 (게스트 모드)
+            checkSessionAndLoad(rid);
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ room_id: rid, password: pw })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setToken(rid, data.access_token);
+                currentRoomId = rid;
+                document.getElementById('loginPw').value = "";
+                alert(`${data.role === 'admin' ? '방장' : '동행자'} 권한으로 로그인되었습니다.`);
+                loadRoomData();
+            } else {
+                alert("비밀번호가 틀렸습니다.");
+            }
+        } catch(e) { alert("로그인 오류"); }
+    }
+
+    function logout() {
+        clearToken();
+        currentRole = "guest";
+        alert("로그아웃 되었습니다. 훈수맨(게스트) 모드로 전환됩니다.");
+        loadRoomData();
+    }
+
+    // --- 방 생성 로직 ---
+    async function submitCreateRoom() {
+        const title = document.getElementById('newTitle').value;
+        const admin_pw = document.getElementById('newAdminPw').value;
+        if (!title || !admin_pw) return alert("제목과 방장 비밀번호는 필수입니다.");
+
+        let city = document.getElementById('newCitySelect').value;
+        let currency = "";
+        if (city === "OTHER") {
+            city = document.getElementById('customCity').value;
+            currency = document.getElementById('customCurrency').value;
+        }
+
+        const payload = {
+            title: title,
+            admin_pw: admin_pw,
+            team_pw: document.getElementById('newTeamPw').value,
+            city: city,
+            currency: currency,
+            member_count: parseInt(document.getElementById('newMemberCount').value) || 1,
+            is_comment_enabled: document.getElementById('newCommentOn').checked
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/create_room`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('fullShareLink').innerText = `${window.location.origin}/${data.room_id}`;
+                document.getElementById('modalForm').style.display = 'none';
+                document.getElementById('modalSuccess').style.display = 'block';
+                // 방 생성 직후 자동 로그인을 위해 토큰 임시 보관 준비
+                document.getElementById('loginRoomId').value = data.room_id;
+                document.getElementById('loginPw').value = admin_pw;
+            } else {
+                alert("생성 실패: 비밀번호는 영문, 숫자, 특수문자를 포함해 8자 이상이어야 합니다.");
+            }
+        } catch(e) { alert("서버 통신 오류"); }
+    }
+
+    function enterAfterCreate() {
+        closeModal();
+        login();
+    }
+
+    // --- 데이터 로드 로직 ---
+    async function loadRoomData() {
+        if (!currentRoomId) return;
+        try {
+            const res = await fetch(`${API_BASE}/room/${currentRoomId}/data`, { headers: getAuthHeaders() });
+            if (!res.ok) {
+                if(res.status === 401) { clearToken(); return loadRoomData(); } // 토큰 만료시 게스트로 재시도
+                return alert("방을 찾을 수 없습니다.");
+            }
+            const data = await res.json();
+            
+            // 전역 변수 세팅
+            currentRole = data.role;
+            currentCurrency = data.currency;
+            roomSettings = data;
+
+            // UI 상태 반영
+            document.getElementById('mainContainer').style.display = 'block';
+            document.getElementById('quickSearchMenu').style.display = 'flex';
+            document.getElementById('btnLogin').style.display = currentRole !== 'guest' ? 'none' : 'block';
+            document.getElementById('btnLogout').style.display = currentRole !== 'guest' ? 'block' : 'none';
+            document.getElementById('loginPw').style.display = currentRole !== 'guest' ? 'none' : 'block';
+            document.getElementById('tabAdminBtn').style.display = currentRole === 'admin' ? 'block' : 'none';
+            
+            // 상단 정보 업데이트
+            document.getElementById('roomTitleDisplay').innerText = data.title;
+            document.getElementById('roomInfoDisplay').innerText = `🗺️ ${data.city||'도시 미지정'} | 👥 ${data.member_count}명 | 권한: ${currentRole.toUpperCase()}`;
+            document.getElementById('currencyUnitText').innerText = data.currency;
+            document.querySelectorAll('.budgetUnit').forEach(e => e.innerText = data.currency_symbol || data.currency);
+
+            // 관리자 탭 기본값 세팅
+            if(currentRole === 'admin') {
+                document.getElementById('adminRoomTitle').value = data.title;
+                document.getElementById('adminMemberCount').value = data.member_count;
+                document.getElementById('adminCommentToggle').checked = data.is_comment_enabled;
+            }
+
+            renderSchedules(data.schedules, data.is_comment_enabled);
+            renderSuggestions(data.suggestions);
+            calculateBudget(); // 탭 이동 없이 예산 초기 계산
+
+        } catch(e) { console.error(e); alert("데이터 로드 중 오류가 발생했습니다."); }
+    }
+
+    // --- 렌더링 로직 ---
+    function renderSchedules(schedules, isCommentOn) {
+        const groupsDiv = document.getElementById('dayGroups');
+        groupsDiv.innerHTML = "";
+        
+        const grouped = {};
+        schedules.forEach(s => {
+            if(!grouped[s.day_num]) grouped[s.day_num] = [];
+            grouped[s.day_num].push(s);
+        });
+
+        Object.keys(grouped).sort((a,b)=>a-b).forEach(day => {
+            const dayBox = document.createElement('div');
+            dayBox.className = "day-section";
+            dayBox.innerHTML = `<h3 class="day-header">DAY ${day}</h3><ul class="schedule-list" id="list-day-${day}"></ul>`;
+            groupsDiv.appendChild(dayBox);
+            
+            const ul = document.getElementById(`list-day-${day}`);
+            grouped[day].forEach(s => {
+                const budgetBadge = s.budget ? `<span class="badge-budget">💵 ${s.budget.toLocaleString()} ${roomSettings.currency_symbol}</span>` : `<span class="badge-no-budget">💸 예산 미정</span>`;
+                const links = `
+                    <div style="margin-top:8px; display:flex; gap:5px;">
+                        ${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" class="btn-gmap">📍 구글맵</a>` : ''}
+                        ${s.tabelog_url ? `<a href="${s.tabelog_url}" target="_blank" class="btn-tabelog">🍜 타베로그</a>` : ''}
+                    </div>
+                `;
+                
+                // 댓글 렌더링
+                let commentsHTML = `<div class="comment-section" id="comments-${s.id}">`;
+                s.comments.forEach(c => {
+                    commentsHTML += `
+                        <div class="comment-item">
+                            <span><span class="comment-writer">${c.writer_name}:</span> ${c.content}</span>
+                            ${currentRole === 'admin' ? `<button onclick="deleteComment(${s.id}, ${c.id})" style="background:none; border:none; color:red; cursor:pointer;">x</button>` : ''}
+                        </div>
+                    `;
+                });
+                
+                // 댓글 입력창 (방장이 허용했거나, 현재 유저가 admin/team인 경우 노출)
+                if (isCommentOn || currentRole !== 'guest') {
+                    commentsHTML += `
+                        <div class="comment-input-group" style="display:flex; gap:5px; margin-top:10px;">
+                            <input type="text" id="cmName-${s.id}" placeholder="닉네임" style="width:25%; padding:6px; border:1px solid #ccc; border-radius:4px;">
+                            <input type="text" id="cmBody-${s.id}" placeholder="댓글 달기" style="width:60%; padding:6px; border:1px solid #ccc; border-radius:4px;">
+                            <button onclick="addComment(${s.id})" style="background:#4a5568; color:white; border:none; border-radius:4px; padding:6px 10px; cursor:pointer;">등록</button>
+                        </div>
+                    `;
+                } else {
+                    commentsHTML += `<div style="font-size:0.8rem; color:#a0aec0; margin-top:10px;">※ 방장이 댓글을 제한했습니다.</div>`;
+                }
+                commentsHTML += `</div>`;
+
+                const delBtn = currentRole === 'admin' ? `<button onclick="deleteSchedule(${s.id})" style="position:absolute; top:15px; right:15px; background:none; border:none; color:#ef4444; font-weight:bold; cursor:pointer;">삭제</button>` : '';
+                const handle = currentRole !== 'guest' ? `<span class="handle" style="cursor:grab; color:#a0aec0; margin-right:10px;">☰</span>` : '';
+
+                ul.innerHTML += `
+                    <li class="schedule-item" data-id="${s.id}">
+                        ${delBtn}
+                        <div style="display:flex; align-items:center;">
+                            ${handle}
+                            <span class="badge-time">${s.time_str}</span>
+                            ${budgetBadge}
+                        </div>
+                        <div style="font-weight:bold; font-size:1.1rem; margin-top:10px;">${s.content}</div>
+                        ${links}
+                        ${commentsHTML}
+                    </li>
+                `;
+            });
+
+            // 드래그 앤 드롭 (권한 있을 때만)
+            if(currentRole !== 'guest') {
+                new Sortable(ul, { 
+                    handle: '.handle', animation: 150, 
+                    onEnd: () => saveOrder(day) 
+                });
+            }
+        });
+    }
+
+    function renderSuggestions(suggestions) {
+        const ul = document.getElementById('suggestionList');
+        ul.innerHTML = suggestions.length ? "" : "<p style='text-align:center; color:#666;'>등록된 훈수가 없습니다.</p>";
+        
+        suggestions.forEach(s => {
+            const adminBtns = currentRole === 'admin' && s.status === '대기중' ? `
+                <button onclick="askApprove(${s.id})" style="background:#10b981; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">일정으로 승인</button>
+                <button onclick="deleteSuggestion(${s.id})" style="background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">삭제</button>
+            ` : '';
+
+            ul.innerHTML += `
+                <li class="schedule-item">
+                    <span style="background:#fff5f5; color:#c53030; padding:4px 8px; border-radius:6px; font-size:0.8rem; font-weight:bold; width:fit-content;">🗣️ ${s.suggester_name}의 훈수</span>
+                    <div style="font-weight:bold; margin-top:10px;">${s.content}</div>
+                    <div style="margin-top:8px; display:flex; gap:5px;">
+                        ${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" class="btn-gmap">📍 구글맵</a>` : ''}
+                        ${s.tabelog_url ? `<a href="${s.tabelog_url}" target="_blank" class="btn-tabelog">🍜 타베로그</a>` : ''}
+                    </div>
+                    <div style="margin-top:15px; display:flex; gap:10px; align-items:center;">
+                        <button onclick="vote(${s.id},'good')" style="background:white; border:1px solid #cbd5e0; padding:5px 10px; border-radius:5px; cursor:pointer;">👍 ${s.good_cnt}</button>
+                        <button onclick="vote(${s.id},'bad')" style="background:white; border:1px solid #cbd5e0; padding:5px 10px; border-radius:5px; cursor:pointer;">👎 ${s.bad_cnt}</button>
+                        <span style="flex-grow:1;"></span>
+                        ${adminBtns}
+                        <span style="font-size:0.8rem; color:#666;">${s.status}</span>
+                    </div>
+                </li>
+            `;
+        });
+    }
+
+    // --- API 요청 액션 ---
+    async function updateRoomSettings() {
+        const payload = {
+            password: prompt("관리자 비밀번호를 다시 입력하세요."),
+            title: document.getElementById('adminRoomTitle').value,
+            member_count: parseInt(document.getElementById('adminMemberCount').value),
+            is_comment_enabled: document.getElementById('adminCommentToggle').checked
+        };
+        if(!payload.password) return;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/settings`, {
+            method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) { alert("저장 완료"); loadRoomData(); } else { alert("권한 없음"); }
+    }
+
+    async function addSchedule() {
+        const h = document.getElementById('schHour').value;
+        const m = document.getElementById('schMinute').value.padStart(2, '0');
+        const budgetStr = document.getElementById('schBudget').value;
+
+        const payload = {
+            day_num: parseInt(document.getElementById('schDay').value),
+            time_str: `${h}:${m}`,
+            content: document.getElementById('schContent').value,
+            google_map_url: document.getElementById('schMap').value,
+            tabelog_url: document.getElementById('schTabelog').value,
+            budget: budgetStr ? parseInt(budgetStr) : null
+        };
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            document.getElementById('schContent').value = "";
+            document.getElementById('schBudget').value = "";
+            alert("일정 추가 완료");
+            loadRoomData();
+        } else alert("권한이 없습니다.");
+    }
+
+    async function deleteSchedule(id) {
+        if(!confirm("진짜 삭제합니까?")) return;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+        if(res.ok) loadRoomData(); else alert("관리자 권한 필요");
+    }
+
+    async function saveOrder(day) {
+        const ul = document.getElementById(`list-day-${day}`);
+        const ids = Array.from(ul.querySelectorAll('li')).map(li => parseInt(li.dataset.id));
+        await fetch(`${API_BASE}/room/${currentRoomId}/reorder`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ new_order: ids })
+        });
+    }
+
+    // 훈수맨 액션
+    async function addSuggestion() {
+        const payload = {
+            suggester_name: document.getElementById('sugName').value || "익명",
+            content: document.getElementById('sugContent').value,
+            google_map_url: document.getElementById('sugMap').value,
+            tabelog_url: document.getElementById('sugTabelog').value
+        };
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) { document.getElementById('sugContent').value=""; loadRoomData(); } else alert("오류 발생");
+    }
+
+    async function vote(id, type) {
+        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/vote?type=${type}`, { method: "POST" });
+        loadRoomData();
+    }
+
+    function askApprove(id) {
+        const d = prompt("몇 일차 일정으로 넣을까요? (숫자)");
+        const t = prompt("시간은요? (예: 12:00)");
+        if(d && t) approveSuggestion(id, d, t);
+    }
+
+    async function approveSuggestion(id, day, time) {
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, {
+            method: "POST", headers: getAuthHeaders(), 
+            body: JSON.stringify({ day_num: parseInt(day), time_str: time })
+        });
+        if(res.ok) loadRoomData(); else alert("관리자 권한 필요");
+    }
+
+    async function deleteSuggestion(id) {
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+        if(res.ok) loadRoomData();
+    }
+
+    // 댓글 액션
+    async function addComment(schId) {
+        const payload = {
+            writer_name: document.getElementById(`cmName-${schId}`).value || "익명",
+            content: document.getElementById(`cmBody-${schId}`).value
+        };
+        if(!payload.content) return;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) loadRoomData(); else alert("권한 부족 또는 방장이 막아둠");
+    }
+
+    async function deleteComment(schId, cmId) {
+        if(!confirm("삭제?")) return;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment/${cmId}`, { method: "DELETE", headers: getAuthHeaders() });
+        if(res.ok) loadRoomData(); else alert("관리자 권한 필요");
+    }
+
+    // 예산 정산 로직
+    async function calculateBudget() {
+        if(!currentRoomId) return;
+        const rate = parseFloat(document.getElementById('exchangeRateInput').value) || null;
+        let url = `${API_BASE}/room/${currentRoomId}/budget_summary`;
+        if(rate) url += `?exchange_rate=${rate}`;
+
+        const res = await fetch(url, { headers: getAuthHeaders() });
+        if(!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('budgetMembers').innerText = data.member_count;
+        document.getElementById('budgetTotalLocal').innerText = data.total_local.toLocaleString();
+        document.getElementById('budgetPerLocal').innerText = data.per_person_local.toLocaleString();
+        
+        if(data.per_person_krw !== null) {
+            document.getElementById('budgetKrwWrap').style.display = 'block';
+            document.getElementById('budgetPerKrw').innerText = data.per_person_krw.toLocaleString();
+        } else {
+            document.getElementById('budgetKrwWrap').style.display = 'none';
+        }
+    }
+</script>
+</body>
+</html>
