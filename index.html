@@ -343,7 +343,7 @@
         loadRoomData();
     }
 
-    // --- 방 생성 로직 ---
+    // --- 방 생성 로직 (에러 검출 강화) ---
     async function submitCreateRoom() {
         const title = document.getElementById('newTitle').value;
         const admin_pw = document.getElementById('newAdminPw').value;
@@ -371,6 +371,7 @@
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
+            
             if (res.ok) {
                 const data = await res.json();
                 document.getElementById('fullShareLink').innerText = `${window.location.origin}/${data.room_id}`;
@@ -380,9 +381,18 @@
                 document.getElementById('loginRoomId').value = data.room_id;
                 document.getElementById('loginPw').value = admin_pw;
             } else {
-                alert("생성 실패: 비밀번호는 영문, 숫자를 포함해 6자 이상이어야 합니다.");
+                // 서버가 보낸 진짜 에러 메시지를 까서 보여줍니다.
+                const errData = await res.json();
+                let exactErrorMsg = "서버 통신 실패";
+                if(errData.detail) {
+                    // Pydantic 에러(배열)인지 확인
+                    exactErrorMsg = Array.isArray(errData.detail) ? errData.detail[0].msg : errData.detail;
+                }
+                alert(`생성 실패 원인:\n${exactErrorMsg}`);
             }
-        } catch(e) { alert("서버 통신 오류"); }
+        } catch(e) { 
+            alert("서버 통신 오류 (500 Error). 백엔드 콘솔이나 요구사항 라이브러리 설치를 확인하세요."); 
+        }
     }
 
     function enterAfterCreate() {
