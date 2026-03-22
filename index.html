@@ -321,6 +321,11 @@
         <label>관리자 비밀번호 * (영문/숫자 6자 이상)</label><input type="password" id="newAdminPw" placeholder="방장용 비밀번호">
         <label>동행자 공용 비밀번호 (선택)</label><input type="password" id="newTeamPw" placeholder="편집 권한 공유용">
         <label>참가 인원수</label><input type="number" id="newMemberCount" value="1" min="1">
+        
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:20px 0;">
+            <input type="checkbox" id="newCommentOn" checked style="width:auto; margin:0;"> 훈수맨 일정별 댓글 허용
+        </label>
+        
         <button class="btn-submit" onclick="submitCreateRoom()">생성하기</button>
         <button onclick="document.getElementById('createRoomModal').style.display='none'" style="background:none; border:none; color:#666; width:100%; margin-top:10px; cursor:pointer;">취소</button>
     </div>
@@ -383,11 +388,16 @@
     function logout() { localStorage.removeItem(`easytrip_token_${currentRoomId}`); location.reload(); }
 
     async function submitCreateRoom() {
+        const title = document.getElementById('newTitle').value;
+        const admin_pw = document.getElementById('newAdminPw').value;
+        const isCommentEnabled = document.getElementById('newCommentOn') ? document.getElementById('newCommentOn').checked : true;
+
         const payload = {
-            title: document.getElementById('newTitle').value, admin_pw: document.getElementById('newAdminPw').value, team_pw: document.getElementById('newTeamPw').value,
+            title: title, admin_pw: admin_pw, team_pw: document.getElementById('newTeamPw').value,
             city: document.getElementById('newCitySelect').value === 'OTHER' ? document.getElementById('customCity').value : document.getElementById('newCitySelect').value,
             currency: document.getElementById('newCitySelect').value === 'OTHER' ? document.getElementById('customCurrency').value : "",
-            member_count: parseInt(document.getElementById('newMemberCount').value)||1, is_comment_enabled: document.getElementById('newCommentOn').checked
+            member_count: parseInt(document.getElementById('newMemberCount').value)||1, 
+            is_comment_enabled: isCommentEnabled
         };
         try {
             const res = await fetch(`${API_BASE}/create_room`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
@@ -594,31 +604,89 @@
     }
 
     async function addSuggestion() {
-        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ suggester_name: document.getElementById('sugName').value || "익명", content: document.getElementById('sugContent').value, google_map_url: document.getElementById('sugMap').value, tabelog_url: document.getElementById('sugTabelog').value }) });
-        document.getElementById('sugContent').value=""; loadRoomData();
+        const payload = {
+            suggester_name: document.getElementById('sugName').value || "익명",
+            content: document.getElementById('sugContent').value,
+            google_map_url: document.getElementById('sugMap').value,
+            tabelog_url: document.getElementById('sugTabelog').value
+        };
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) { document.getElementById('sugContent').value=""; loadRoomData(); } else alert("오류 발생");
     }
-    async function vote(id, t) { await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/vote?type=${t}`, { method: "POST" }); loadRoomData(); }
-    function askApprove(id) { const d=prompt("몇 일차?"), st=prompt("시작(HH:MM)?"), et=prompt("종료(HH:MM)?"); if(d&&st&&et) fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`,{method:"POST",headers:getAuthHeaders(),body:JSON.stringify({day_num:parseInt(d),start_time:st,end_time:et})}).then(()=>loadRoomData()); }
-    async function deleteSuggestion(id) { await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}`, { method: "DELETE", headers: getAuthHeaders() }); loadRoomData(); }
 
-    async function addComment(schId) {
-        let wName = ""; if(currentRole==='guest'){ wName=document.getElementById(`cmName-${schId}`).value; if(!wName) return alert("닉네임 필수"); }
-        const content = document.getElementById(`cmBody-${schId}`).value; if(!content) return;
-        await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({writer_name:wName, content}) });
+    async function vote(id, type) {
+        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/vote?type=${type}`, { method: "POST" });
         loadRoomData();
     }
-    async function deleteComment(schId, cmId) { if(confirm("삭제?")) { await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment/${cmId}`, { method: "DELETE", headers: getAuthHeaders() }); loadRoomData(); } }
+
+    function askApprove(id) {
+        const d = prompt("몇 일차 일정으로 넣을까요? (숫자)");
+        const st = prompt("시작 시간은요? (예: 12:00)");
+        const et = prompt("종료 시간은요? (예: 13:00)");
+        if(d && st && et) approveSuggestion(id, d, st, et);
+    }
+
+    async function approveSuggestion(id, day, st, et) {
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, {
+            method: "POST", headers: getAuthHeaders(), 
+            body: JSON.stringify({ day_num: parseInt(day), start_time: st, end_time: et })
+        });
+        if(res.ok) loadRoomData(); else alert("관리자 권한 필요");
+    }
+
+    async function deleteSuggestion(id) {
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+        if(res.ok) loadRoomData();
+    }
+
+    async function addComment(schId) {
+        let wName = "";
+        if (currentRole === 'guest') {
+            const raw = document.getElementById(`cmName-${schId}`).value;
+            if(!raw) return alert("닉네임을 입력해주세요.");
+            wName = raw;
+        }
+
+        const payload = {
+            writer_name: wName,
+            content: document.getElementById(`cmBody-${schId}`).value
+        };
+        if(!payload.content) return;
+
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment`, {
+            method: "POST", headers: getAuthHeaders(), body: JSON.stringify(payload)
+        });
+        if(res.ok) loadRoomData(); else alert("권한 부족 또는 방장이 막아둠");
+    }
+
+    async function deleteComment(schId, cmId) {
+        if(!confirm("삭제?")) return;
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment/${cmId}`, { method: "DELETE", headers: getAuthHeaders() });
+        if(res.ok) loadRoomData(); else alert("관리자 권한 필요");
+    }
 
     async function calculateBudget() {
+        if(!currentRoomId) return;
         const rate = parseFloat(document.getElementById('exchangeRateInput').value) || null;
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/budget_summary${rate?`?exchange_rate=${rate}`:''}`);
+        let url = `${API_BASE}/room/${currentRoomId}/budget_summary`;
+        if(rate) url += `?exchange_rate=${rate}`;
+
+        const res = await fetch(url, { headers: getAuthHeaders() });
+        if(!res.ok) return;
         const data = await res.json();
-        if(!data.member_count) return;
+
         document.getElementById('budgetMembers').innerText = data.member_count;
         document.getElementById('budgetTotalLocal').innerText = data.total_local.toLocaleString();
         document.getElementById('budgetPerLocal').innerText = data.per_person_local.toLocaleString();
-        if(data.per_person_krw !== null) { document.getElementById('budgetKrwWrap').style.display='block'; document.getElementById('budgetPerKrw').innerText = data.per_person_krw.toLocaleString(); }
-        else document.getElementById('budgetKrwWrap').style.display='none';
+        
+        if(data.per_person_krw !== null) {
+            document.getElementById('budgetKrwWrap').style.display = 'block';
+            document.getElementById('budgetPerKrw').innerText = data.per_person_krw.toLocaleString();
+        } else {
+            document.getElementById('budgetKrwWrap').style.display = 'none';
+        }
     }
 </script>
 </body>
