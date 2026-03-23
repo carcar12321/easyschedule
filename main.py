@@ -49,14 +49,11 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 # ─────────────────────────────────────────────
-# Gemini 모델 매핑
+# Gemini 모델 매핑 (최신 Gemini 3.1 Pro 및 3 Flash 모델 직접 호출)
 # ─────────────────────────────────────────────
 GEMINI_MODEL_MAP = {
-    "gemini-2.5-flash": "gemini-2.5-flash",
-    "gemini-2.5-pro":   "gemini-2.5-pro",
-    "gemini-2.0-flash": "gemini-2.0-flash",
-    "gemini-1.5-flash": "gemini-1.5-flash",
-    "gemini-1.5-pro":   "gemini-1.5-pro",
+    "gemini-3-flash": "gemini-3-flash",
+    "gemini-3.1-pro": "gemini-3.1-pro",
 }
 
 # ─────────────────────────────────────────────
