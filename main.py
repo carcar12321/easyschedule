@@ -1040,4 +1040,3 @@ def budget_summary(room_id: str, exchange_rate: Optional[float] = None):
         "per_person_krw": per_person_krw, 
         "exchange_rate_per_1000krw": exchange_rate
     }
-```
