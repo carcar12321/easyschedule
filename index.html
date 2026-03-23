@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Easy Schedule Pro 🎒</title>
-    <!-- 정렬용 -->
+    <!-- 정렬 드래그 앤 드롭 -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <!-- 요구사항 2: QR 코드 생성용 CDN 추가 -->
+    <!-- QR 코드 생성 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
@@ -20,11 +20,12 @@
         .top-bar h1 { margin: 0; font-size: 1.5rem; cursor: pointer; font-weight: 900; }
         .top-bar-inputs { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .top-bar input { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; outline: none; color: #333; }
-        .top-bar button { padding: 8px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .top-bar button { padding: 8px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        
         .btn-create { background-color: #10b981; color: white; }
+        .btn-api { background-color: #f59e0b; color: white; border: 1px solid #d97706; }
         .btn-login { background-color: #ef4444; color: white; }
         .btn-logout { background-color: #6b7280; color: white; display: none; }
-        .btn-api-key { background-color: #f59e0b; color: white; border: 1px solid #d97706; }
 
         .container { max-width: 900px; margin: 20px auto; padding: 0 20px; }
         
@@ -45,23 +46,20 @@
         
         /* 버튼 및 뱃지 */
         .btn-submit { width: 100%; padding: 12px; background: #2b6cb0; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        .btn-action { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; cursor: pointer; border: 1px solid transparent; }
+        .btn-action { padding: 8px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border: 1px solid transparent; }
         
         .role-admin { background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
         .role-team { background: #e0e7ff; color: #4338ca; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
         .role-guest { background: #f3f4f6; color: #4b5563; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
 
-        /* 구글 맵 추가 스타일 */
+        /* 구글 맵 & AI 주변검색 스타일 */
         .badge-rating { background: #fffbeb; color: #b45309; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; border: 1px solid #fde68a; margin-left: 5px; }
         .transit-box { margin-left: 120px; padding: 10px; color: #4b5563; font-size: 0.85rem; border-left: 2px dashed #cbd5e0; display: flex; align-items: center; gap: 8px; background: #f8fafc; border-radius: 0 8px 8px 0; margin-bottom: 16px; width: fit-content; }
         .ai-card { background: linear-gradient(to right, #ffffff, #f0f9ff); border-left: 4px solid #3b82f6; padding: 15px; margin-bottom: 12px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .ai-card strong { font-size: 1.05rem; color: #1e3a8a; }
         .ai-desc { font-size: 0.85rem; color: #2563eb; margin: 8px 0; font-weight: 500; }
 
-        /* 신규: QR 코드 표시 박스 */
-        #qrcodeContainer { display: flex; justify-content: center; margin: 20px 0; padding: 10px; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e0; }
-
-        /* 템플릿: 히어로 및 카드 UI */
+        /* UI 컴포넌트 */
         .hero { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #533483 100%); color: white; padding: 40px 20px; text-align: center; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
         .hero-emoji { font-size: 52px; margin-bottom: 12px; display: block; }
         .hero h1 { font-size: 2rem; font-weight: 900; margin-bottom: 8px; }
@@ -81,19 +79,15 @@
         .flight-num { background: linear-gradient(90deg, #4299e1, #805ad5); color: white; border-radius: 12px; padding: 3px 10px; font-size: 0.75rem; font-weight: 700; }
         .flight-memo { font-size: 0.8rem; color: #718096; margin-top: 10px; background: #f8fafc; padding: 6px 10px; border-radius: 6px; }
 
-        .hotel-section { margin-bottom: 20px; }
-        .hotel-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; background: white; border-radius: 0 0 16px 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        .hotel-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; background: white; border-radius: 0 0 16px 16px; padding: 16px; }
         .hotel-card { background: white; border-radius: 14px; overflow: hidden; border: 1px solid #e2e8f0; }
         .hotel-header { padding: 12px 16px 8px; color: white; font-weight: 900; font-size: 0.9rem; letter-spacing: 1px; }
-        .h-kuma { background: linear-gradient(135deg, #2b6cb0, #2c5282); }
-        .h-kago1 { background: linear-gradient(135deg, #276749, #22543d); }
-        .h-kago2 { background: linear-gradient(135deg, #553c9a, #44337a); }
         .hotel-body { padding: 16px; }
         .hotel-name { font-weight: 800; font-size: 1rem; margin-bottom: 8px; color: #1a202c; }
         .hotel-dates { font-size: 0.8rem; font-weight: 700; color: #4a5568; margin-bottom: 12px; background: #edf2f7; padding: 4px 8px; border-radius: 6px; display: inline-block;}
-        .map-btn { display: inline-flex; font-size: 0.76rem; font-weight: 700; text-decoration: none; padding: 6px 12px; border-radius: 8px; background: #e8f0fe; color: #1a73e8; }
+        .map-btn { display: inline-flex; font-size: 0.76rem; font-weight: 700; text-decoration: none; padding: 6px 12px; border-radius: 8px; background: #e8f0fe; color: #1a73e8; margin-right:5px;}
 
-        /* 타임라인 (일정) 스타일 */
+        /* 일정 뷰 */
         .day-block { background: white; border-radius: 16px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
         .day-header { padding: 16px 24px; color: white; font-size: 1.2rem; font-weight: 900; background: linear-gradient(90deg, #2d3748, #1a202c); display: flex; justify-content: space-between; align-items: center; }
         .timeline { padding: 20px 24px; list-style: none; margin: 0; }
@@ -109,7 +103,7 @@
         .admin-box h4 { margin-top: 0; color: #1a202c; font-size: 1.1rem; font-weight: 800; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; margin-bottom: 15px; }
         .admin-box input, .admin-box select, .admin-box textarea { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #cbd5e0; border-radius: 8px; box-sizing: border-box; }
         
-        /* 훈수맨 & 댓글 */
+        /* 훈수맨 댓글 */
         .comment-section { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
         .comment-item { font-size: 0.85rem; padding: 6px 0; display: flex; justify-content: space-between; align-items: center; }
 
@@ -120,18 +114,21 @@
         
         .top-utils { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; }
         
+        #qrCodeBox { display: flex; justify-content: center; margin: 20px 0; padding: 10px; background: white; border-radius: 8px; border: 1px dashed #cbd5e0; }
+        #qrCodeBox img { border-radius: 6px; }
+
         @media print { 
-            .top-bar, .tabs, .admin-box, .top-utils, .floating-menu, .comment-input-group, .handle, button { display: none !important; } 
+            .top-bar, .tabs, .admin-box, .top-utils, .floating-menu, .handle, button { display: none !important; } 
             body { background: white; } .container { max-width: 100%; } 
             .tab-content { display: block !important; } .tl-content { border-bottom: none; }
         }
-        .clean-view .top-bar, .clean-view .tabs, .clean-view .admin-box, .clean-view .floating-menu, .clean-view .comment-input-group, .clean-view .handle { display: none !important; }
-
+        .clean-view .top-bar, .clean-view .tabs, .clean-view .admin-box, .clean-view .floating-menu, .clean-view .handle, .clean-view .comment-section { display: none !important; }
+        
         @media (max-width: 640px) {
             .flight-grid { grid-template-columns: 1fr; }
-            .flight-card { border-right: none; }
             .tl-item { flex-direction: column; gap: 8px; }
             .tl-time { width: auto; }
+            .transit-box { margin-left: 20px; }
         }
     </style>
 </head>
@@ -140,12 +137,11 @@
 <div class="top-bar">
     <h1 onclick="location.href='/'">🎒 Easy Schedule Pro</h1>
     <div class="top-bar-inputs">
-        <!-- 요구사항 3: 전역 API 설정 버튼 우측 배치 -->
-        <button class="btn-api-key" onclick="openApiSettingsModal()">🔑 API 설정</button>
+        <button class="btn-api" onclick="openApiSettingsModal()">🔑 API 설정</button>
         <button class="btn-create" onclick="openCreateModal()">+ 방 만들기</button>
         <input type="text" id="loginRoomId" placeholder="방 ID">
         <input type="password" id="loginPw" placeholder="비밀번호">
-        <input type="text" id="loginNickname" placeholder="닉네임(동행자용 8자)" maxlength="8" style="width:160px;">
+        <input type="text" id="loginNickname" placeholder="닉네임(동행자 8자)" maxlength="8" style="width:150px;">
         <button class="btn-login" id="btnLogin" onclick="login()">입장</button>
         <button class="btn-logout" id="btnLogout" onclick="logout()">로그아웃</button>
     </div>
@@ -159,7 +155,7 @@
 
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('tab-schedule', this)">📅 일정</button>
-        <button class="tab-btn" id="tabFlightBtn" onclick="switchTab('tab-flight', this)" style="display:none;">✈️ 항공&숙박 입력</button>
+        <button class="tab-btn" id="tabFlightBtn" onclick="switchTab('tab-flight', this)" style="display:none;">✈️ 항공/숙박 입력</button>
         <button class="tab-btn" onclick="switchTab('tab-suggestion', this)">🙋‍♂️ 훈수맨</button>
         <button class="tab-btn" onclick="switchTab('tab-budget', this)">💰 정산</button>
         <button class="tab-btn" id="tabAdminBtn" onclick="switchTab('tab-admin', this)" style="display:none;">⚙️ 방 설정</button>
@@ -167,7 +163,6 @@
 
     <!-- 탭 1: 일정 -->
     <div id="tab-schedule" class="tab-content active">
-        
         <div class="hero">
             <span class="hero-emoji">🗺️</span>
             <h1 id="heroTitle">여행 제목</h1>
@@ -181,16 +176,15 @@
             <div class="flight-grid" id="flightGrid"></div>
         </div>
 
-        <div class="hotel-section" id="hotelDiv" style="display:none;">
-            <div class="section-title" style="border-radius: 12px 12px 0 0;">🏨 숙소 정보</div>
+        <div id="hotelDiv" style="margin-bottom: 20px; display:none;">
+            <div class="section-title" style="border-radius: 12px 12px 0 0; background:linear-gradient(90deg, #164e63, #0891b2);">🏨 숙소 정보</div>
             <div class="hotel-cards" id="hotelCards"></div>
         </div>
 
         <div class="admin-box" id="addScheduleBox" style="display:none; background:#eff6ff; border-color:#bfdbfe;">
-            <!-- 신규 요구사항 5: LLM 일정 자동 추가 버튼 -->
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #93c5fd; padding-bottom:10px; margin-bottom:15px;">
-                <h4 style="margin:0; color:#1e3a8a; border:none;">+ 새 일정 추가</h4>
-                <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="openAiScheduleModal()">🤖 AI 일정 자동 생성</button>
+                <h4 style="margin:0; color:#1e3a8a; border:none;">+ 새 일정 수동 추가</h4>
+                <button class="btn-action" style="background:#8b5cf6; color:white;" onclick="openAiModal()">🤖 AI 일정 자동 생성</button>
             </div>
             <div style="display:flex; gap:10px; margin-bottom:15px; align-items: center;">
                 <select id="schDay" style="width:20%;">
@@ -200,8 +194,8 @@
                 <span style="font-weight:bold; color:#666;">~</span>
                 <input type="time" id="schEndTime" required style="width:35%; margin-bottom:0;">
             </div>
-            <input type="text" id="schContent" placeholder="일정 내용 (구글맵 링크를 넣으면 상호명이 자동 완성됩니다.)">
-            <input type="number" id="schBudget" placeholder="예산 (선택, 숫자만 입력)">
+            <input type="text" id="schContent" placeholder="일정 내용 (구글맵 링크 입력 시 상호명 자동 완성)">
+            <input type="number" id="schBudget" placeholder="예산 (선택, 화폐단위 제외하고 숫자만)">
             <div style="display:flex; gap:10px;">
                 <input type="text" id="schMap" placeholder="구글맵 링크 (선택)">
                 <input type="text" id="schTabelog" placeholder="타베로그 링크 (선택)">
@@ -215,58 +209,50 @@
     <!-- 탭 2: 항공 및 숙박 -->
     <div id="tab-flight" class="tab-content">
         <div class="admin-box">
-            <h4>🛫 출국 비행편 등록</h4>
+            <h4>🛫 출국/귀국 비행편 등록</h4>
+            <select id="fType" style="margin-bottom:10px;">
+                <option value="출국">🛫 출국행</option>
+                <option value="귀국">🛬 귀국행</option>
+            </select>
             <div style="display:flex; gap:10px;">
-                <input type="text" id="depAirport" placeholder="출발/도착 공항 (예: 인천 -> 가고시마)" style="width:60%;">
-                <input type="text" id="depFlightNum" placeholder="편명 (예: KE2180)" style="width:40%;">
+                <input type="text" id="fAirport" placeholder="출발/도착 공항 (예: 인천 -> 가고시마)" style="width:60%;">
+                <input type="text" id="fNum" placeholder="편명 (예: KE2180)" style="width:40%;">
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
-                <input type="text" id="depTerminal" placeholder="터미널 (예: 1터미널)" style="width:30%; margin-bottom:0;">
-                <input type="time" id="depStartTime" title="출발 시간" style="width:35%; margin-bottom:0;">
+                <input type="text" id="fTerm" placeholder="터미널" style="width:30%; margin-bottom:0;">
+                <input type="time" id="fStart" title="출발 시간" style="width:35%; margin-bottom:0;">
                 <span style="font-weight:bold;">~</span>
-                <input type="time" id="depEndTime" title="도착 시간" style="width:35%; margin-bottom:0;">
+                <input type="time" id="fEnd" title="도착 시간" style="width:35%; margin-bottom:0;">
             </div>
-            <input type="text" id="depMemo" placeholder="기타 메모 (선택)" style="margin-top:12px;">
-            <button class="btn-submit" onclick="addFlight('출국')">출국 비행편 등록</button>
+            <input type="text" id="fMemo" placeholder="메모 (선택)" style="margin-top:12px;">
+            <button class="btn-submit" style="background:#3b82f6;" onclick="addFlight()">항공편 등록</button>
         </div>
 
         <div class="admin-box">
             <h4>🏨 숙박 등록</h4>
             <div style="margin-bottom:12px;">
-                <label style="color:#2d3748;">적용 일차 선택 (다중 선택 가능):</label>
-                <div id="accDaysDiv" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
-                    <script>for(let i=1;i<=10;i++)document.write(`<label style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="acc-day-chk" value="${i}" style="width:auto; margin:0;"> ${i}일차</label>`)</script>
+                <label>적용 일차 (다중 선택 가능):</label>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                    <script>
+                        for(let i=1;i<=15;i++) {
+                            document.write(`<label style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="acc-day-chk" value="${i}" style="width:auto; margin:0;"> ${i}일차</label>`);
+                        }
+                    </script>
                 </div>
             </div>
-            <input type="text" id="accHotel" placeholder="숙소 이름 (예: 리치몬드 호텔 킨세이초)">
-            <input type="text" id="accMap" placeholder="구글맵 링크 (선택)">
+            <input type="text" id="aHotel" placeholder="숙소 이름 (예: 리치몬드 호텔 킨세이초)">
+            <input type="text" id="aMap" placeholder="구글맵 링크 (선택)">
             <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
-                <input type="number" id="accBudget" placeholder="총 예산 (숫자만)" style="width:70%; margin-bottom:0;">
-                <label style="display:inline-flex; align-items:center; gap:5px; width:30%; margin:0; cursor:pointer;">
-                    <input type="checkbox" id="accBreakfast" style="width:auto; margin:0;"> 조식 포함
+                <input type="number" id="aBudget" placeholder="총 예산 (숫자만 입력)" style="width:70%; margin-bottom:0;">
+                <label style="display:inline-flex; align-items:center; width:30%; margin:0; cursor:pointer;">
+                    <input type="checkbox" id="aBreakfast" style="width:auto; margin:0; margin-right:5px;"> 조식 포함
                 </label>
             </div>
             <button class="btn-submit" style="background:#059669;" onclick="addAccommodation()">숙소 등록</button>
         </div>
 
-        <div class="admin-box">
-            <h4>🛬 귀국 비행편 등록</h4>
-            <div style="display:flex; gap:10px;">
-                <input type="text" id="retAirport" placeholder="출발/도착 공항 (예: 가고시마 -> 인천)" style="width:60%;">
-                <input type="text" id="retFlightNum" placeholder="편명 (예: KE2181)" style="width:40%;">
-            </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <input type="text" id="retTerminal" placeholder="터미널 (예: 2터미널)" style="width:30%; margin-bottom:0;">
-                <input type="time" id="retStartTime" title="출발 시간" style="width:35%; margin-bottom:0;">
-                <span style="font-weight:bold;">~</span>
-                <input type="time" id="retEndTime" title="도착 시간" style="width:35%; margin-bottom:0;">
-            </div>
-            <input type="text" id="retMemo" placeholder="기타 메모 (선택)" style="margin-top:12px;">
-            <button class="btn-submit" style="background:#7c3aed;" onclick="addFlight('귀국')">귀국 비행편 등록</button>
-        </div>
-
         <div class="admin-box" id="editListsBox" style="display:none;">
-            <h4>🗑️ 등록된 항공/숙박 관리 (방장 전용)</h4>
+            <h4>🗑️ 등록 목록 관리 (삭제)</h4>
             <div id="manageFlightAccList" style="font-size:0.9rem;"></div>
         </div>
     </div>
@@ -276,9 +262,8 @@
         <div class="admin-box" style="background:#fff7ed; border-color:#fde68a;">
             <h4 style="border-bottom-color:#fef08a;">💡 새로운 훈수 남기기</h4>
             <input type="text" id="sugName" placeholder="닉네임 (최대 4자)" maxlength="4">
-            <input type="text" id="sugContent" placeholder="추천할 장소나 꿀팁">
+            <input type="text" id="sugContent" placeholder="추천할 장소나 꿀팁 (일정에 반영되길 바라는 내용)">
             <input type="text" id="sugMap" placeholder="구글맵 링크 (선택)">
-            <input type="text" id="sugTabelog" placeholder="타베로그 링크 (선택)" style="display:none;">
             <button class="btn-submit" style="background:#f59e0b;" onclick="addSuggestion()">훈수 등록</button>
         </div>
         <ul id="suggestionList" style="list-style:none; padding:0;"></ul>
@@ -287,7 +272,7 @@
     <!-- 탭 4: 정산 -->
     <div id="tab-budget" class="tab-content">
         <div class="admin-box">
-            <h4>💱 수동 환율 설정</h4>
+            <h4>💱 수동 환율 적용</h4>
             <div style="display:flex; gap:10px; align-items:center;">
                 <span style="font-weight:bold;">1,000 KRW = </span>
                 <input type="number" id="exchangeRateInput" placeholder="예: 110" style="width:120px; margin:0;">
@@ -295,163 +280,178 @@
                 <button class="btn-action" style="background:#2b6cb0; color:white; padding:10px 20px;" onclick="calculateBudget()">적용</button>
             </div>
         </div>
-        <div id="budgetResult" style="background:white; padding:30px; border-radius:16px; border:2px solid #bbf7d0; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.05);">
-            <p style="color:#166534; font-weight:800; font-size:1.1rem;">정산 요약 (일정 + 숙박 통합)</p>
-            <p style="margin:5px 0; color:#4a5568;">총 인원: <span id="budgetMembers" style="font-weight:bold;">0</span>명</p>
-            <h2 style="margin:15px 0; color:#064e3b; font-size:2rem;">총 예산: <span id="budgetTotalLocal">0</span> <span class="budgetUnit"></span></h2>
+        <div id="budgetResult" style="background:white; padding:30px; border-radius:16px; border:2px solid #bbf7d0; text-align:center;">
+            <p style="color:#166534; font-weight:800;">총합 예산 (일정 전체 예산 + 숙박 비용)</p>
+            <h2 style="margin:15px 0; color:#064e3b; font-size:2rem;">총액: <span id="budgetTotalLocal">0</span> <span class="budgetUnit"></span></h2>
             <hr style="border-top:1px dashed #bbf7d0; margin:20px 0;">
-            <p style="margin:10px 0; color:#166534; font-size:1.1rem;">1인당 부담금: <b style="font-size:1.5rem;"><span id="budgetPerLocal">0</span> <span class="budgetUnit"></span></b></p>
+            <p style="color:#166534; font-size:1.1rem;">1인당: <b style="font-size:1.5rem;"><span id="budgetPerLocal">0</span> <span class="budgetUnit"></span></b></p>
             <div id="budgetKrwWrap" style="display:none; background:#eff6ff; padding:15px; border-radius:12px; margin-top:15px;">
-                <p style="margin:0; color:#1e3a8a; font-weight:bold;">1인당 부담금 (원화 환산)</p>
-                <p style="margin:5px 0 0 0; color:#1d4ed8; font-size:1.8rem; font-weight:900;"><span id="budgetPerKrw">0</span> KRW</p>
+                <p style="color:#1e3a8a; font-weight:bold;">원화 환산 1인당 예상 금액</p>
+                <p style="color:#1d4ed8; font-size:1.8rem; font-weight:900;"><span id="budgetPerKrw">0</span> 원</p>
             </div>
         </div>
     </div>
 
     <!-- 탭 5: 방 설정 -->
     <div id="tab-admin" class="tab-content">
-        <!-- 신규 요구사항 4 & 6 : 데이터 코스 Import / Export -->
-        <div class="admin-box" style="background: #f8fafc; border: 1px solid #cbd5e0;">
-            <h4 style="color: #334155;">📦 코스 백업 및 불러오기 (Import/Export)</h4>
-            <p style="font-size: 0.85rem; color: #475569;">현재 방의 일정을 긴 코드로 저장해 타인과 공유하거나 복구할 수 있습니다.</p>
-            <div style="display:flex; gap:10px;">
-                <button class="btn-action" style="background:#10b981; color:white; padding: 10px 20px;" onclick="exportCourseData()">📤 이 코스 내보내기 (복사)</button>
-                <button class="btn-action" style="background:#6366f1; color:white; padding: 10px 20px;" onclick="openImportModal()">📥 타인의 코드 가져오기</button>
+        
+        <!-- Import / Export 기능 블록 -->
+        <div class="admin-box" style="background:#f8fafc; border-color:#cbd5e0;">
+            <h4>📦 여행 코스 데이터 백업 / 복원</h4>
+            <p style="font-size:0.85rem; color:#475569; margin-top:0;">현재 방의 일정과 예약 내역을 고유 코드로 추출해 다른 사람에게 공유하거나, 공유받은 코드를 복원할 수 있습니다.</p>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button class="btn-action" style="background:#10b981; color:white; padding:12px;" onclick="exportCourse()">📤 이 여행 코스 내보내기</button>
+                <button class="btn-action" style="background:#f59e0b; color:white; padding:12px;" onclick="openImportModal()">📥 여행 코드 붙여넣기</button>
             </div>
         </div>
 
         <div class="admin-box">
-            <h4>⚙️ 기본 설정</h4>
-            <label>여행 제목</label><input type="text" id="adminRoomTitle">
-            <label>인원수 수정</label><input type="number" id="adminMemberCount" min="1">
+            <h4>⚙️ 방 기본 설정 관리</h4>
+            <label>여행 제목 수정</label>
+            <input type="text" id="adminRoomTitle">
+            
+            <label>비밀번호 공유용 (팀원용 / 동행자 편집권한 부여시 사용)</label>
+            <input type="password" id="adminTeamPw" placeholder="새로 설정할 때만 입력해주세요">
+            
+            <label>여행 참가 인원수</label>
+            <input type="number" id="adminMemberCount" min="1">
+            
             <label style="display:flex; align-items:center; gap:8px; margin:15px 0; cursor:pointer;">
-                <input type="checkbox" id="adminCommentToggle" style="width:auto; margin:0;"> 훈수맨 일정별 댓글 허용
+                <input type="checkbox" id="adminCommentToggle" style="width:auto; margin:0;"> 훈수맨이 일정마다 댓글을 달 수 있도록 허용
             </label>
             
-            <h4 style="margin-top:30px;">⭐ 상단 북마크 설정 (구글맵 장소 모음집 등)</h4>
-            <div style="display:flex; gap:10px;"><input type="text" id="bmName1" placeholder="버튼명 1" style="width:30%;"><input type="text" id="bmLink1" placeholder="URL 링크 1" style="width:70%;"></div>
-            <div style="display:flex; gap:10px;"><input type="text" id="bmName2" placeholder="버튼명 2" style="width:30%;"><input type="text" id="bmLink2" placeholder="URL 링크 2" style="width:70%;"></div>
-            <div style="display:flex; gap:10px;"><input type="text" id="bmName3" placeholder="버튼명 3" style="width:30%;"><input type="text" id="bmLink3" placeholder="URL 링크 3" style="width:70%;"></div>
+            <h4 style="margin-top:30px;">⭐ 즐겨찾기 (상단 고정 북마크)</h4>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="bmN1" placeholder="버튼 1 이름" style="width:30%;">
+                <input type="text" id="bmL1" placeholder="연결할 웹사이트 URL" style="width:70%;">
+            </div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="bmN2" placeholder="버튼 2 이름" style="width:30%;">
+                <input type="text" id="bmL2" placeholder="연결할 웹사이트 URL" style="width:70%;">
+            </div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="bmN3" placeholder="버튼 3 이름" style="width:30%;">
+                <input type="text" id="bmL3" placeholder="연결할 웹사이트 URL" style="width:70%;">
+            </div>
             
-            <button class="btn-submit" onclick="updateRoomSettings()" style="margin-top:15px; background:#1e3a8a;">설정 전체 저장 (비밀번호 확인 필요)</button>
+            <button class="btn-submit" onclick="updateSettings()" style="background:#1e3a8a; margin-top:10px;">변경 설정 저장하기 (방장 PW 필요)</button>
         </div>
     </div>
 </div>
 
-<!-- 플로팅 메뉴 (GPS 기능) -->
+<!-- 하단 빠른 플로팅 메뉴 -->
 <div class="floating-menu" id="quickSearchMenu" style="display:none;">
-    <button class="float-btn" style="background:#3b82f6;" onclick="handleGPS('restaurant')">🍴 주변 AI 맛집</button>
-    <button class="float-btn" style="background:#475569;" onclick="handleGPS('smoking')">🚬 흡연구역 찾기</button>
-    <button class="float-btn" style="background:#10b981;" onclick="handleGPS('convenience')">🏪 편의점 찾기</button>
+    <button class="float-btn" style="background:#3b82f6;" onclick="handleGPS('restaurant')">🍴 GPS 맛집 추천</button>
+    <button class="float-btn" style="background:#475569;" onclick="handleGPS('smoking')">🚬 근처 흡연구역</button>
+    <button class="float-btn" style="background:#10b981;" onclick="handleGPS('convenience')">🏪 주변 편의점</button>
 </div>
 
-<!-- 신규 요구사항 3: 전역 API 키 설정 모달 -->
+<!-- 전역 API 설정 모달 -->
 <div id="apiSettingsModal" class="modal-overlay">
     <div class="modal-content">
-        <h3>🔑 전역 API 설정</h3>
-        <p style="font-size:0.8rem; color:#dc2626;">※ 입력된 키 값은 사용자 본인의 브라우저 localStorage에만 저장되며, 서버 스토리지(DB)에 보관되지 않습니다.</p>
+        <h3>🔑 전역 API 설정 (브라우저 로컬 저장)</h3>
         
-        <label>Google Maps API Key (이동시간, 장소, 주변검색 등)</label>
-        <input type="password" id="userGoogleApiKey" placeholder="AIzaSy...">
+        <label>Google Maps API Key (이동시간 자동 계산 및 장소 검색에 필수)</label>
+        <input type="password" id="gApiKey" placeholder="AIzaSy...">
         
-        <label>LLM (Gemini) API Key (AI 스케줄 자동생성 용도)</label>
-        <input type="password" id="userLlmApiKey" placeholder="Gemini API Key를 입력하세요">
+        <label>LLM (Gemini) API Key (AI 스케줄 자동 작성에 필수)</label>
+        <input type="password" id="llmApiKey" placeholder="Gemini API 키 입력...">
+        
+        <p style="font-size:0.8rem; color:#dc2626;">※ 입력하신 키 정보는 현재 사용 중인 브라우저(로컬 스토리지)에만 저장되며, 어떠한 서버나 DB에도 영구 저장되지 않으므로 안심하고 사용하셔도 됩니다.</p>
         
         <div style="display:flex; gap:10px; margin-top:20px;">
-            <button class="btn-submit" onclick="saveApiKeys()">저장하기</button>
-            <button class="btn-action" style="background:#e2e8f0; width:100%; color:#4a5568;" onclick="document.getElementById('apiSettingsModal').style.display='none'">닫기</button>
+            <button class="btn-submit" style="background:#2b6cb0;" onclick="saveApiKeys()">내 컴퓨터에 안전하게 저장하기</button>
+            <button class="btn-action" style="background:#e2e8f0; color:#333; width:100%;" onclick="document.getElementById('apiSettingsModal').style.display='none'">닫기</button>
         </div>
-    </div>
-</div>
-
-<!-- 신규 요구사항 4: Import 코드 붙여넣기 모달 -->
-<div id="importCourseModal" class="modal-overlay">
-    <div class="modal-content">
-        <h3>📥 코스 데이터 가져오기 (복원)</h3>
-        <label>복사했던 Base64 데이터 코드를 아래에 붙여넣어주세요.</label>
-        <textarea id="importCodeInput" rows="6" placeholder="매우 긴 영문/숫자 코드 조합입니다..."></textarea>
-        
-        <label style="display:flex; align-items:center; gap:5px; margin: 15px 0; cursor:pointer;">
-            <input type="checkbox" id="importOverwriteCheck" style="width:auto; margin:0;" checked> 
-            기존 데이터를 모두 지우고 완전히 덮어쓰기
-        </label>
-        
-        <div style="display:flex; gap:10px;">
-            <button class="btn-submit" style="background:#6366f1;" onclick="submitImportCourse()">복원 실행</button>
-            <button class="btn-action" style="background:#e2e8f0; width:100%; color:#4a5568;" onclick="document.getElementById('importCourseModal').style.display='none'">취소</button>
-        </div>
-    </div>
-</div>
-
-<!-- 신규 요구사항 5: LLM 기반 AI 스케줄러 모달 -->
-<div id="aiScheduleModal" class="modal-overlay">
-    <div class="modal-content">
-        <h3>🤖 AI 스케줄러 호출</h3>
-        <p style="font-size:0.85rem; color:#4a5568;">Gemini AI가 당신의 방문 도시와 일정을 고려해 식당 및 관광지가 포함된 전체 일정을 구성해 줍니다.</p>
-        
-        <label>방문할 도시 / 목적지 테마 설명 (예: 삿포로 겨울 축제 중심 힐링여행)</label>
-        <input type="text" id="aiInputCity" placeholder="목적지와 특징을 적어주세요.">
-        
-        <label>총 여행 기간 (Days)</label>
-        <input type="number" id="aiInputDays" value="3" min="1" max="15">
-        
-        <div style="display:flex; gap:10px; margin-top: 15px;">
-            <button class="btn-submit" id="btnCallAi" style="background:#8b5cf6;" onclick="callAiScheduler()">✨ 일정 자동 만들기 (약 15초 대기)</button>
-            <button class="btn-action" style="background:#e2e8f0; width:50%; color:#4a5568;" onclick="document.getElementById('aiScheduleModal').style.display='none'">닫기</button>
-        </div>
-    </div>
-</div>
-
-
-<!-- GPS 결과 모달 -->
-<div id="gpsResultModal" class="modal-overlay">
-    <div class="modal-content">
-        <h3 style="color:#2b6cb0;">📍 내 위치 주변 검색</h3>
-        <div id="gpsModalBody">
-            <!-- 검색 결과 표시 영역 -->
-        </div>
-        <button class="btn-submit" style="margin-top:15px; background:#4a5568;" onclick="document.getElementById('gpsResultModal').style.display='none'">닫기</button>
     </div>
 </div>
 
 <!-- 방 생성 모달 -->
 <div id="createRoomModal" class="modal-overlay">
     <div class="modal-content" id="modalForm">
-        <h3>✨ 새 여행 방 만들기</h3>
-        <label>여행 제목 *</label><input type="text" id="newTitle" placeholder="예: 가고시마 먹방투어">
-        <label>도시 및 통화 선택 *</label>
+        <h3>✨ 여행 방 만들기</h3>
+        <label>여행 제목 *</label>
+        <input type="text" id="newTitle" placeholder="예: 오사카 먹방여행">
+        
+        <label>방장 비밀번호 * (영문/숫자 조합 6자 이상 필수)</label>
+        <input type="password" id="newAdminPw">
+        
+        <label>목적지 / 통화 단위 *</label>
         <select id="newCitySelect" onchange="toggleCustomCity()">
-            <optgroup label="일본 (JPY)"><option value="도쿄">도쿄</option><option value="오사카">오사카</option><option value="나고야">나고야</option><option value="후쿠오카">후쿠오카</option><option value="구마모토">구마모토</option><option value="가고시마" selected>가고시마</option><option value="삿포로">삿포로</option><option value="오키나와">오키나와</option></optgroup>
-            <optgroup label="대만 (TWD)"><option value="타이베이">타이베이</option><option value="가오슝">가오슝</option></optgroup>
-            <option value="OTHER">기타 (직접 입력)</option>
+            <option value="도쿄">도쿄 (JPY)</option>
+            <option value="오사카" selected>오사카 (JPY)</option>
+            <option value="후쿠오카">후쿠오카 (JPY)</option>
+            <option value="타이베이">타이베이 (TWD)</option>
+            <option value="OTHER">기타 직접입력</option>
         </select>
+        
         <div id="customCityDiv" style="display:none; gap:10px;">
-            <input type="text" id="customCity" placeholder="도시명" style="width:50%;">
-            <input type="text" id="customCurrency" placeholder="통화 (예: USD)" style="width:50%;">
+            <input type="text" id="cCity" placeholder="도시명">
+            <input type="text" id="cCurr" placeholder="사용할 통화 (예: USD)">
         </div>
-        <label>관리자 비밀번호 * (영문/숫자 6자 이상)</label><input type="password" id="newAdminPw" placeholder="방장용 비밀번호">
-        <label>동행자 공용 비밀번호 (선택)</label><input type="password" id="newTeamPw" placeholder="편집 권한 공유용">
-        <label>참가 인원수</label><input type="number" id="newMemberCount" value="1" min="1">
         
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:20px 0;">
-            <input type="checkbox" id="newCommentOn" checked style="width:auto; margin:0;"> 훈수맨 일정별 댓글 허용
-        </label>
-        
-        <button class="btn-submit" onclick="submitCreateRoom()">생성하기</button>
-        <button onclick="document.getElementById('createRoomModal').style.display='none'" style="background:none; border:none; color:#666; width:100%; margin-top:10px; cursor:pointer;">취소</button>
+        <button class="btn-submit" onclick="submitCreateRoom()">새로운 일정표 생성하기</button>
+        <button class="btn-action" style="width:100%; margin-top:10px; background:#e2e8f0; color:#4a5568;" onclick="document.getElementById('createRoomModal').style.display='none'">생성 취소</button>
     </div>
     
-    <!-- 신규 요구사항 1 & 2 : 방 생성 결과에 QR 및 복사 버튼 적용 -->
     <div class="modal-content" id="modalSuccess" style="display:none; text-align:center;">
-        <h3>🎉 생성 성공!</h3>
-        <div class="share-link-box" id="fullShareLink" style="background:#f1f5f9; padding:15px; border-radius:8px; border:1px dashed #2b6cb0; margin-bottom:15px; word-break:break-all; font-weight: bold; color: #1e3a8a;"></div>
+        <h3>🎉 방 생성이 완료되었습니다!</h3>
+        <p style="font-size:0.9rem; color:#4a5568; margin-bottom:20px;">아래 버튼을 눌러 카카오톡 등으로 여행 동행자들에게 링크를 공유해보세요.</p>
         
-        <button class="btn-action" style="background:#4ade80; color:#064e3b; font-weight:900; padding:10px 20px; border-radius:30px;" onclick="copyRoomLink()">📋 링크 전체 복사하기</button>
+        <div class="share-link-box" id="fullShareLink" style="background:#f8fafc; padding:15px; border-radius:8px; border:1px dashed #2b6cb0; word-break:break-all; margin-bottom:10px; font-weight:bold;"></div>
         
-        <!-- 동적으로 QR 생성될 자리 -->
-        <div id="qrcodeContainer"></div>
+        <button class="btn-action" style="background:#4ade80; color:#14532d; font-weight:900; padding:10px 20px; border-radius:30px;" onclick="copyRoomLink()">📋 고유 링크 주소 복사하기</button>
+        
+        <div id="qrCodeBox"></div>
+        
+        <button class="btn-submit" id="btnGoToRoom" style="background:#1e3a8a; margin-top:20px;">👉 만들어진 일정표로 즉시 입장하기</button>
+    </div>
+</div>
 
-        <button class="btn-submit" id="btnRedirectNewRoom" style="background:#1e3a8a; margin-top:10px;">👉 방으로 즉시 입장</button>
+<!-- Import 모달 -->
+<div id="importModal" class="modal-overlay">
+    <div class="modal-content">
+        <h3>📥 다른 사람의 코스 데이터 가져오기</h3>
+        <label>코스 추출(내보내기) 기능을 통해 얻어낸 코드를 복사해서 아래에 붙여넣으세요.</label>
+        <textarea id="importCodeInput" rows="5" placeholder="Base64 포맷의 긴 암호화 코드를 붙여넣어주세요..."></textarea>
+        
+        <label style="display:flex; align-items:center; gap:5px; margin-top: 10px;">
+            <input type="checkbox" id="importOverwrite" style="width:auto; margin:0;" checked>
+            기존 작성해둔 데이터(항공/숙소/일정)를 지우고 깨끗하게 덮어쓰기
+        </label>
+        
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <button class="btn-submit" style="background:#f59e0b;" onclick="submitImport()">코드 적용하고 복구하기</button>
+            <button class="btn-action" style="width:100%; background:#e2e8f0;" onclick="document.getElementById('importModal').style.display='none'">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- AI 모달 -->
+<div id="aiModal" class="modal-overlay">
+    <div class="modal-content">
+        <h3>🤖 AI 자동 스케줄 플래너</h3>
+        <p style="font-size:0.85rem; color:#666;">도착하실 도시와 원하는 여행 일수를 적어주시면, 똑똑한 구글 Gemini 인공지능이 현지 상황에 맞는 추천 관광지 및 맛집 동선 일정표를 자동으로 구성하여 달아줍니다!</p>
+        
+        <label>목적지명과 특징</label>
+        <input type="text" id="aiCity" placeholder="예: 오사카 2박3일 초보자용, 가족여행, 식도락 중심">
+        
+        <label>스케줄을 구성할 총 기간 (Day)</label>
+        <input type="number" id="aiDays" value="3" min="1" max="15">
+        
+        <div style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn-submit" id="aiBtnTrigger" style="background:#8b5cf6;" onclick="triggerAi()">✨ AI로 스케줄 자동 작성 (생성 시까지 대기)</button>
+            <button class="btn-action" style="width:50%; background:#e2e8f0;" onclick="document.getElementById('aiModal').style.display='none'">닫기</button>
+        </div>
+    </div>
+</div>
+
+<!-- GPS 공통 결과 모달 -->
+<div id="gpsResultModal" class="modal-overlay">
+    <div class="modal-content">
+        <h3 style="color:#2b6cb0;">📍 주변 검색 탐색 결과</h3>
+        <div id="gpsModalBody"></div>
+        <button class="btn-submit" style="margin-top:15px; background:#4a5568;" onclick="document.getElementById('gpsResultModal').style.display='none'">확인 및 닫기</button>
     </div>
 </div>
 
@@ -459,69 +459,80 @@
     const API_BASE = ""; 
     let currentRoomId = "";
     let currentRole = "guest";
-    let currentNickname = "훈수꾼";
-    let roomSettings = {};
-    let generatedRoomUrl = ""; // 새로 생성한 방의 URL을 담기 위한 전역변수
+    let generatedRoomUrl = "";
 
     window.onload = () => {
-        const rid = window.location.pathname.split('/')[1];
+        const urlSegments = window.location.pathname.split('/');
+        const rid = urlSegments[urlSegments.length - 1];
+        
         if (rid && rid.length === 12) {
             document.getElementById('loginRoomId').value = rid;
-            checkSessionAndLoad(rid);
+            currentRoomId = rid;
+            loadRoomData();
         }
     };
 
     function switchTab(id, btn) {
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(element => element.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(element => element.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         btn.classList.add('active');
     }
-
+    
     function toggleCleanView() {
         document.body.classList.toggle('clean-view');
-        document.getElementById('cleanViewBtn').innerText = document.body.classList.contains('clean-view') ? "✏️ 편집 모드 복귀" : "✨ 여행기 모드 토글";
+        const isClean = document.body.classList.contains('clean-view');
+        document.getElementById('cleanViewBtn').innerText = isClean ? "✏️ 기본 편집 모드 복귀" : "✨ 여행기 뷰어 모드";
     }
 
-    function toggleCustomCity() { 
-        document.getElementById('customCityDiv').style.display = document.getElementById('newCitySelect').value === 'OTHER' ? 'flex' : 'none'; 
-    }
-    
-    function openCreateModal() { 
-        document.getElementById('createRoomModal').style.display = 'flex'; 
+    function openApiSettingsModal() {
+        const savedGoogleKey = localStorage.getItem('my_google_api_key') || "";
+        const savedLlmKey = localStorage.getItem('my_llm_api_key') || "";
+        
+        document.getElementById('gApiKey').value = savedGoogleKey;
+        document.getElementById('llmApiKey').value = savedLlmKey;
+        document.getElementById('apiSettingsModal').style.display = 'flex';
     }
 
-    function getToken() { 
-        return localStorage.getItem(`easytrip_token_${currentRoomId}`); 
+    function saveApiKeys() {
+        const gKey = document.getElementById('gApiKey').value.trim();
+        const llmKey = document.getElementById('llmApiKey').value.trim();
+        
+        localStorage.setItem('my_google_api_key', gKey);
+        localStorage.setItem('my_llm_api_key', llmKey);
+        
+        alert("브라우저 로컬 저장소에 귀하의 API 설정이 보존되었습니다.");
+        document.getElementById('apiSettingsModal').style.display = 'none';
     }
-    
-    function setToken(rid, token) { 
-        localStorage.setItem(`easytrip_token_${rid}`, token); 
-    }
-    
-    // HTTP 헤더 생성 (JWT 토큰 + 구글 API 키 + LLM API 키 포함)
+
     function getAuthHeaders() { 
-        const t = getToken(); 
-        const g = localStorage.getItem('my_google_api_key');
-        const l = localStorage.getItem('my_llm_api_key');
+        const token = localStorage.getItem(`easytrip_token_${currentRoomId}`);
+        const googleKey = localStorage.getItem('my_google_api_key');
+        const llmKey = localStorage.getItem('my_llm_api_key');
+        
         let headers = {"Content-Type": "application/json"};
         
-        if (t) headers["Authorization"] = `Bearer ${t}`;
-        if (g) headers["X-Google-Api-Key"] = g;
-        if (l) headers["X-LLM-Api-Key"] = l;
+        if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+        }
+        if (googleKey) {
+            headers["X-Google-Api-Key"] = googleKey;
+        }
+        if (llmKey) {
+            headers["X-LLM-Api-Key"] = llmKey;
+        }
         
         return headers;
     }
 
-    function getRoleColorClass(name) {
-        if (name === '방장') return 'role-admin';
-        if (name.startsWith('동행자')) return 'role-team';
-        return 'role-guest';
+    function openCreateModal() { 
+        document.getElementById('createRoomModal').style.display = 'flex'; 
     }
-
-    async function checkSessionAndLoad(rid) { 
-        currentRoomId = rid; 
-        await loadRoomData(); 
+    
+    function toggleCustomCity() { 
+        const selectBox = document.getElementById('newCitySelect');
+        const customDiv = document.getElementById('customCityDiv');
+        customDiv.style.display = selectBox.value === 'OTHER' ? 'flex' : 'none'; 
     }
 
     async function login() {
@@ -529,256 +540,138 @@
         const pw = document.getElementById('loginPw').value;
         const nick = document.getElementById('loginNickname').value;
         
-        if (!rid) return alert("방 ID를 입력하세요.");
-        if (!pw) return checkSessionAndLoad(rid); // 게스트 로그인
+        if (!rid) {
+            alert("입장하시려는 방의 ID를 꼭 기입해주세요.");
+            return;
+        }
+        if (!pw) { 
+            currentRoomId = rid; 
+            await loadRoomData(); 
+            return;
+        }
         
         try {
+            const requestBody = JSON.stringify({
+                room_id: rid, 
+                password: pw, 
+                nickname: nick
+            });
+            
             const res = await fetch(`${API_BASE}/auth/login`, { 
                 method: "POST", 
-                headers: {"Content-Type":"application/json"}, 
-                body: JSON.stringify({room_id:rid, password:pw, nickname:nick}) 
+                headers: {"Content-Type": "application/json"}, 
+                body: requestBody
             });
+            
             const data = await res.json();
             
-            if (res.ok) { 
-                setToken(rid, data.access_token); 
-                alert(`${data.nickname} 님 환영합니다!`); 
+            if (res.ok) {
+                localStorage.setItem(`easytrip_token_${rid}`, data.access_token);
                 currentRoomId = rid; 
                 document.getElementById('loginPw').value = ""; 
-                loadRoomData(); 
-            } else {
-                alert(data.detail || "로그인 실패");
+                loadRoomData();
+            } else { 
+                alert(data.detail); 
             }
         } catch(e) { 
-            alert("서버 오류가 발생했습니다."); 
+            alert("서버 연결에 실패하였습니다."); 
         }
     }
-
+    
     function logout() { 
         localStorage.removeItem(`easytrip_token_${currentRoomId}`); 
         location.reload(); 
     }
 
     async function submitCreateRoom() {
-        const title = document.getElementById('newTitle').value;
-        const admin_pw = document.getElementById('newAdminPw').value;
-        const isCommentEnabled = document.getElementById('newCommentOn') ? document.getElementById('newCommentOn').checked : true;
-
-        if(!title || !admin_pw) {
-            return alert("필수 항목을 모두 입력해주세요.");
+        const titleInput = document.getElementById('newTitle').value;
+        const pwInput = document.getElementById('newAdminPw').value;
+        const selectCity = document.getElementById('newCitySelect').value;
+        const customCity = document.getElementById('cCity').value;
+        const customCurr = document.getElementById('cCurr').value;
+        
+        if (!titleInput || !pwInput) {
+            alert("일정표 제목과 패스워드는 필수 항목입니다.");
+            return;
         }
 
         const payload = {
-            title: title, 
-            admin_pw: admin_pw, 
-            team_pw: document.getElementById('newTeamPw').value,
-            city: document.getElementById('newCitySelect').value === 'OTHER' ? document.getElementById('customCity').value : document.getElementById('newCitySelect').value,
-            currency: document.getElementById('newCitySelect').value === 'OTHER' ? document.getElementById('customCurrency').value : "",
-            member_count: parseInt(document.getElementById('newMemberCount').value) || 1, 
-            is_comment_enabled: isCommentEnabled
+            title: titleInput, 
+            admin_pw: pwInput, 
+            city: selectCity === 'OTHER' ? customCity : selectCity,
+            currency: selectCity === 'OTHER' ? customCurr : ""
         };
         
         try {
             const res = await fetch(`${API_BASE}/create_room`, { 
                 method: "POST", 
-                headers: {"Content-Type":"application/json"}, 
+                headers: {"Content-Type": "application/json"}, 
                 body: JSON.stringify(payload) 
             });
-            if (res.ok) {
-                const data = await res.json();
-                generatedRoomUrl = `${window.location.origin}/${data.room_id}`;
-                document.getElementById('fullShareLink').innerText = generatedRoomUrl;
-                document.getElementById('modalForm').style.display='none'; 
-                document.getElementById('modalSuccess').style.display='block';
-
-                // 요구사항 2: QR 코드 동적 렌더링
-                const qrContainer = document.getElementById("qrcodeContainer");
-                qrContainer.innerHTML = "";
-                new QRCode(qrContainer, {
-                    text: generatedRoomUrl,
-                    width: 150,
-                    height: 150,
-                    colorDark : "#1e3a8a",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.L
-                });
-
-                // 요구사항 1: 리다이렉트 (새로고침 x -> 즉시 해당 방 주소로 이동)
-                document.getElementById('btnRedirectNewRoom').onclick = () => {
-                    location.href = '/' + data.room_id;
-                };
-
-            } else { 
+            
+            if (!res.ok) { 
                 const err = await res.json(); 
-                alert(`생성 실패:\n${Array.isArray(err.detail) ? err.detail[0].msg : err.detail}`); 
+                alert("실패: " + (err.detail[0]?.msg || err.detail)); 
+                return;
             }
+            
+            const data = await res.json();
+            generatedRoomUrl = `${window.location.origin}/${data.room_id}`;
+            document.getElementById('fullShareLink').innerText = generatedRoomUrl;
+            document.getElementById('modalForm').style.display = 'none'; 
+            document.getElementById('modalSuccess').style.display = 'block';
+
+            const qrBox = document.getElementById("qrCodeBox");
+            qrBox.innerHTML = "";
+            new QRCode(qrBox, { 
+                text: generatedRoomUrl, 
+                width: 140, 
+                height: 140, 
+                colorDark: "#1e3a8a", 
+                colorLight: "#ffffff", 
+                correctLevel: QRCode.CorrectLevel.L 
+            });
+
+            document.getElementById('btnGoToRoom').onclick = () => {
+                location.href = '/' + data.room_id;
+            };
+            
         } catch(e) { 
-            alert("통신 오류가 발생했습니다."); 
+            alert("네트워크 통신 중 에러가 발생했습니다."); 
         }
     }
 
-    // 요구사항 1 : 생성된 URL 클립보드 복사
     async function copyRoomLink() {
-        if (!navigator.clipboard) {
-            return alert("지원하지 않는 브라우저입니다. 위 링크를 직접 복사하세요.");
+        if (!navigator.clipboard) { 
+            alert("사용하시는 브라우저에서는 클립보드 복사를 지원하지 않습니다. 화면 상단의 링크를 직접 드래그해서 복사해주세요.");
+            return; 
         }
         try {
             await navigator.clipboard.writeText(generatedRoomUrl);
-            alert("✅ 여행 링크가 클립보드에 복사되었습니다! 카카오톡 등에 붙여넣기 하세요.");
-        } catch (e) {
-            alert("링크 복사에 실패했습니다.");
+            alert("✅ 일정표 접속 링크 복사 완료! 일행들과 카톡 등에 공유해주세요.");
+        } catch(e) { 
+            alert("알 수 없는 이유로 복사에 실패했습니다."); 
         }
     }
-
-    // 요구사항 3: 전역 API 키 관리 로직
-    function openApiSettingsModal() {
-        const savedGKey = localStorage.getItem('my_google_api_key');
-        const savedLlmKey = localStorage.getItem('my_llm_api_key');
-        
-        if (savedGKey) document.getElementById('userGoogleApiKey').value = savedGKey;
-        if (savedLlmKey) document.getElementById('userLlmApiKey').value = savedLlmKey;
-        
-        document.getElementById('apiSettingsModal').style.display = 'flex';
-    }
-
-    function saveApiKeys() {
-        const gKey = document.getElementById('userGoogleApiKey').value.trim();
-        const llmKey = document.getElementById('userLlmApiKey').value.trim();
-        
-        if (gKey) localStorage.setItem('my_google_api_key', gKey);
-        else localStorage.removeItem('my_google_api_key');
-            
-        if (llmKey) localStorage.setItem('my_llm_api_key', llmKey);
-        else localStorage.removeItem('my_llm_api_key');
-            
-        alert("브라우저 로컬 저장소에 API 키들이 설정되었습니다.");
-        document.getElementById('apiSettingsModal').style.display = 'none';
-    }
-
-    // 요구사항 4 & 6: Import/Export 데이터 복사 및 입력
-    async function exportCourseData() {
-        try {
-            const res = await fetch(`${API_BASE}/room/${currentRoomId}/export`, { 
-                method: "GET", headers: getAuthHeaders() 
-            });
-            if (!res.ok) {
-                return alert("관리자 권한이 없거나 불러오기 권한이 없습니다.");
-            }
-            const data = await res.json();
-            
-            if (navigator.clipboard) {
-                await navigator.clipboard.writeText(data.export_code);
-                alert("📦 [코스 데이터 백업 완료]\n해당 방의 모든 일정이 압축(Base64)되어 클립보드에 복사되었습니다.\n\n다른 방에서[가져오기]를 눌러 코드를 붙여넣으세요.");
-            } else {
-                prompt("지원하지 않는 환경입니다. 아래 코드를 복사해주세요.", data.export_code);
-            }
-        } catch(e) {
-            alert("데이터 내보내기 중 서버 오류가 발생했습니다.");
-        }
-    }
-
-    function openImportModal() {
-        document.getElementById('importCodeInput').value = "";
-        document.getElementById('importCourseModal').style.display = 'flex';
-    }
-
-    async function submitImportCourse() {
-        const codeInput = document.getElementById('importCodeInput').value.trim();
-        const overwrite = document.getElementById('importOverwriteCheck').checked;
-        
-        if(!codeInput) return alert("복사해둔 코스 코드를 붙여넣어주세요.");
-        
-        try {
-            const res = await fetch(`${API_BASE}/room/${currentRoomId}/import`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ export_code: codeInput, clear_existing: overwrite })
-            });
-            
-            if (res.ok) {
-                alert("📥 성공적으로 새로운 코스를 가져와 현재 방에 복구/합성 시켰습니다!");
-                document.getElementById('importCourseModal').style.display = 'none';
-                loadRoomData();
-            } else {
-                const err = await res.json();
-                alert(`오류: ${err.detail}`);
-            }
-        } catch(e) {
-            alert("가져오기 도중 문제가 발생했습니다.");
-        }
-    }
-
-    // 요구사항 5: LLM 기반 AI 스케줄 호출 로직
-    function openAiScheduleModal() {
-        if (!localStorage.getItem('my_llm_api_key')) {
-            alert("💡 기능을 사용하시려면 화면 우측 상단의 [🔑 API 설정]에서 Gemini 키를 먼저 등록해주세요.");
-            return;
-        }
-        
-        // 도시 값이 이미 세팅되어 있다면 AI 도시입력란에 자동 기입
-        const curCity = document.getElementById('heroCity').innerText;
-        if(curCity && curCity !== '미지정') {
-            document.getElementById('aiInputCity').value = curCity;
-        }
-        
-        document.getElementById('aiScheduleModal').style.display = 'flex';
-    }
-
-    async function callAiScheduler() {
-        const aiCity = document.getElementById('aiInputCity').value.trim();
-        const aiDays = parseInt(document.getElementById('aiInputDays').value);
-        const btn = document.getElementById('btnCallAi');
-        
-        if(!aiCity) return alert("여행할 도시와 간략한 취향(먹방, 쇼핑 등)을 입력해주세요!");
-        
-        btn.innerText = "⏳ 스케줄 작성 중... (구글에 요청중)";
-        btn.style.opacity = "0.5";
-        btn.disabled = true;
-        
-        try {
-            const res = await fetch(`${API_BASE}/room/${currentRoomId}/ai_schedule`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-                body: JSON.stringify({ city: aiCity, days: aiDays })
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                alert(`🎉 스케줄 생성 완료!\n총 ${data.generated_count}개의 일정이 일정 탭에 자동 추가되었습니다.\n(마음에 들지 않으면 직접 수정 및 삭제할 수 있습니다.)`);
-                document.getElementById('aiScheduleModal').style.display = 'none';
-                loadRoomData();
-            } else {
-                const err = await res.json();
-                alert(`요청 실패: ${err.detail}`);
-            }
-        } catch (e) {
-            alert("네트워크 또는 서버 연결 문제가 발생했습니다.");
-        } finally {
-            btn.innerText = "✨ 일정 자동 만들기 (약 15초 대기)";
-            btn.style.opacity = "1";
-            btn.disabled = false;
-        }
-    }
-
 
     async function loadRoomData() {
         if (!currentRoomId) return;
         
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/data`, { headers: getAuthHeaders() });
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/data`, { 
+            headers: getAuthHeaders() 
+        });
         
-        if (!res.ok) { 
-            if (res.status === 401) {
+        if (!res.ok) {
+            if (res.status === 401) { 
                 localStorage.removeItem(`easytrip_token_${currentRoomId}`); 
-                return loadRoomData();
-            } 
-            return; 
+                await loadRoomData();
+                return;
+            }
+            return;
         }
         
         const data = await res.json();
-        
-        currentRole = data.role; 
-        currentNickname = data.nickname; 
-        roomSettings = data;
+        currentRole = data.role;
         
         document.getElementById('mainContainer').style.display = 'block';
         document.getElementById('quickSearchMenu').style.display = 'flex';
@@ -794,597 +687,669 @@
         document.getElementById('editListsBox').style.display = currentRole === 'admin' ? 'block' : 'none';
 
         document.getElementById('heroTitle').innerText = data.title;
-        document.getElementById('heroCity').innerText = data.city || '도시 미지정';
+        document.getElementById('heroCity').innerText = data.city || '도착지 미정';
         document.getElementById('heroMembers').innerText = data.member_count;
-        document.getElementById('heroNickname').innerText = currentNickname;
-        
+        document.getElementById('heroNickname').innerText = data.nickname;
         document.getElementById('currencyUnitText').innerText = data.currency;
-        document.querySelectorAll('.budgetUnit').forEach(e => e.innerText = data.currency_symbol || data.currency);
+        
+        const budgetUnits = document.querySelectorAll('.budgetUnit');
+        budgetUnits.forEach(unit => {
+            unit.innerText = data.currency_symbol || data.currency;
+        });
 
         if (currentRole === 'admin') {
             document.getElementById('adminRoomTitle').value = data.title;
             document.getElementById('adminMemberCount').value = data.member_count;
             document.getElementById('adminCommentToggle').checked = data.is_comment_enabled;
-            data.bookmarks.forEach((b, i) => { 
-                document.getElementById(`bmName${i+1}`).value = b.name; 
-                document.getElementById(`bmLink${i+1}`).value = b.url; 
-            });
+            
+            if (data.bookmarks.length >= 1) { document.getElementById('bmN1').value = data.bookmarks[0].name; document.getElementById('bmL1').value = data.bookmarks[0].url; }
+            if (data.bookmarks.length >= 2) { document.getElementById('bmN2').value = data.bookmarks[1].name; document.getElementById('bmL2').value = data.bookmarks[1].url; }
+            if (data.bookmarks.length >= 3) { document.getElementById('bmN3').value = data.bookmarks[2].name; document.getElementById('bmL3').value = data.bookmarks[2].url; }
         }
 
-        renderBookmarks(data.bookmarks);
-        renderFlightsAndHotels(data.flights, data.accommodations);
+        renderBookmarks(data.bookmarks); 
+        renderFlights(data.flights); 
+        renderHotels(data.accommodations);
         renderSchedules(data.schedules, data.is_comment_enabled);
-        renderSuggestions(data.suggestions);
-        renderManageLists(data.flights, data.accommodations);
+        renderSuggestions(data.suggestions); 
+        renderEditLists(data.flights, data.accommodations);
+        
         calculateBudget();
     }
 
-    function renderBookmarks(bookmarks) {
-        const div = document.getElementById('bookmarkDiv');
-        if (!bookmarks || bookmarks.length === 0) { 
-            div.style.display = 'none'; 
-            return; 
+    function renderBookmarks(bookmarksList) {
+        const divBox = document.getElementById('bookmarkDiv');
+        if (!bookmarksList || bookmarksList.length === 0) {
+            divBox.style.display = 'none';
+            return;
         }
-        div.style.display = 'flex'; 
-        div.innerHTML = "";
         
-        const colors =[ 
-            {bg:'#ebf8ff', text:'#2b6cb0', border:'#bee3f8'}, 
-            {bg:'#fff5f5', text:'#c53030', border:'#fed7d7'}, 
-            {bg:'#faf5ff', text:'#553c9a', border:'#e9d8fd'} 
-        ];
+        divBox.style.display = 'flex';
         
-        bookmarks.forEach((b, i) => {
-            const c = colors[i % 3];
-            div.innerHTML += `<a href="${b.url}" target="_blank" class="bookmark-btn" style="background:${c.bg}; color:${c.text}; border-color:${c.border};">📌 ${b.name}</a>`;
+        const htmlArray = bookmarksList.map(bookmark => {
+            return `<a href="${bookmark.url}" target="_blank" class="bookmark-btn" style="background:#ebf8ff; color:#2b6cb0;">📌 ${bookmark.name}</a>`;
         });
+        
+        divBox.innerHTML = htmlArray.join('');
     }
 
-    function renderFlightsAndHotels(flights, accommodations) {
-        const fDiv = document.getElementById('flightDiv');
-        const fGrid = document.getElementById('flightGrid');
+    function renderFlights(flightList) {
+        const wrap = document.getElementById('flightDiv'); 
+        const grid = document.getElementById('flightGrid');
         
-        if (!flights || flights.length === 0) { 
-            fDiv.style.display = 'none'; 
-        } else {
-            fDiv.style.display = 'block'; 
-            fGrid.innerHTML = "";
-            flights.forEach(f => {
-                const icon = f.flight_type === '출국' ? '🛫' : '🛬';
-                fGrid.innerHTML += `
-                    <div class="flight-card">
-                        <div class="flight-dir">${icon} ${f.flight_type}</div>
-                        <div class="flight-times">
-                            <div><div class="time">${f.departure_time}</div><div class="sub">출발</div></div>
-                            <div style="flex:1; text-align:center;">
-                                <span class="flight-num">${f.flight_num}</span>
-                                <div style="font-size:0.7rem; color:#718096; margin-top:4px;">${f.airport}</div>
-                            </div>
-                            <div><div class="time">${f.arrival_time}</div><div class="sub">도착</div></div>
-                        </div>
-                        ${f.terminal ? `<span style="font-size:0.75rem; font-weight:bold; color:#d97706; background:#fef3c7; padding:2px 6px; border-radius:4px;">${f.terminal}</span>` : ''}
-                        ${f.memo ? `<div class="flight-memo">${f.memo}</div>` : ''}
-                    </div>`;
-            });
+        if (flightList.length === 0) {
+            wrap.style.display = 'none';
+            return;
         }
-
-        const hDiv = document.getElementById('hotelDiv');
-        const hCards = document.getElementById('hotelCards');
         
-        if (!accommodations || accommodations.length === 0) { 
-            hDiv.style.display = 'none'; 
-        } else {
-            hDiv.style.display = 'block'; 
-            hCards.innerHTML = "";
-            const hClasses =['h-kuma', 'h-kago1', 'h-kago2'];
-            accommodations.forEach((a, i) => {
-                const cls = hClasses[i % 3];
-                const daysStr = a.days_applied.map(d => `${d}일차`).join(', ');
-                const mapBtn = a.google_map_url ? `<a href="${a.google_map_url}" target="_blank" class="map-btn">📍 구글맵</a>` : '';
-                const bfBadge = a.has_breakfast ? `<span style="font-size:0.76rem; background:#fef08a; color:#854d0e; padding:4px 8px; border-radius:6px; font-weight:bold; margin-left:5px;">🍳 조식 O</span>` : '';
-                const budgetBadge = a.budget ? `<div style="margin-top:8px; font-size:0.8rem; color:#166534; font-weight:bold;">💵 예산: ${a.budget.toLocaleString()}</div>` : '';
-                
-                hCards.innerHTML += `
-                    <div class="hotel-card">
-                        <div class="hotel-header ${cls}">ACCOMMODATION</div>
-                        <div class="hotel-body">
-                            <div class="hotel-name">${a.hotel_name}</div>
-                            <div class="hotel-dates">📅 적용: ${daysStr}</div><br>
-                            ${mapBtn}${bfBadge}${budgetBadge}
-                        </div>
-                    </div>`;
-            });
-        }
+        wrap.style.display = 'block';
+        
+        const flightHtml = flightList.map(flight => {
+            const flightIcon = flight.flight_type === '출국' ? '🛫' : '🛬';
+            let htmlChunk = `<div class="flight-card">`;
+            htmlChunk += `<div class="flight-dir">${flightIcon} ${flight.flight_type}</div>`;
+            htmlChunk += `<div class="flight-times">`;
+            htmlChunk += `  <div><div class="time">${flight.departure_time}</div></div>`;
+            htmlChunk += `  <div style="flex:1; text-align:center;"><span class="flight-num">${flight.flight_num}</span></div>`;
+            htmlChunk += `  <div><div class="time">${flight.arrival_time}</div></div>`;
+            htmlChunk += `</div>`;
+            
+            if (flight.terminal) {
+                htmlChunk += `<span>터미널: ${flight.terminal} </span>`;
+            }
+            if (flight.memo) {
+                htmlChunk += `<div class="flight-memo">메모: ${flight.memo}</div>`;
+            }
+            htmlChunk += `</div>`;
+            
+            return htmlChunk;
+        });
+        
+        grid.innerHTML = flightHtml.join('');
     }
 
-    function renderManageLists(flights, accommodations) {
-        const div = document.getElementById('manageFlightAccList'); 
-        div.innerHTML = "";
+    function renderHotels(hotelList) {
+        const wrapper = document.getElementById('hotelDiv'); 
+        const cardsArea = document.getElementById('hotelCards');
         
-        flights.forEach(f => {
-            div.innerHTML += `
-                <div style="padding:10px; border-bottom:1px solid #edf2f7; display:flex; justify-content:space-between;">
-                    <span>[${f.flight_type}] ${f.flight_num} (${f.departure_time}~${f.arrival_time})</span> 
-                    <button onclick="deleteFlight(${f.id})" style="color:red; border:none; background:none; cursor:pointer;">삭제</button>
-                </div>`;
+        if (hotelList.length === 0) {
+            wrapper.style.display = 'none';
+            return;
+        }
+        
+        wrapper.style.display = 'block';
+        
+        const hotelsHtml = hotelList.map(hotel => {
+            let chunk = `<div class="hotel-card">`;
+            chunk += `<div class="hotel-header" style="background:#164e63;">${hotel.hotel_name}</div>`;
+            chunk += `<div class="hotel-body">`;
+            chunk += `<div class="hotel-dates">📅 적용 일정: ${hotel.days_applied.join(', ')}일차</div><br>`;
+            
+            if (hotel.google_map_url) {
+                chunk += `<a href="${hotel.google_map_url}" target="_blank" class="map-btn">📍 구글맵 이동</a> `;
+            }
+            if (hotel.budget) {
+                chunk += `<b> 예상 예산: ${hotel.budget.toLocaleString()} </b>`;
+            }
+            
+            chunk += `</div></div>`;
+            return chunk;
         });
         
-        accommodations.forEach(a => {
-            div.innerHTML += `
-                <div style="padding:10px; border-bottom:1px solid #edf2f7; display:flex; justify-content:space-between;">
-                    <span>[숙소] ${a.hotel_name} (${a.days_applied.join(',')}일차)</span> 
-                    <button onclick="deleteAcc(${a.id})" style="color:red; border:none; background:none; cursor:pointer;">삭제</button>
-                </div>`;
-        });
+        cardsArea.innerHTML = hotelsHtml.join('');
     }
 
-    function renderSchedules(schedules, isCommentOn) {
-        const groupsDiv = document.getElementById('dayGroups'); 
-        groupsDiv.innerHTML = "";
+    function renderSchedules(schedulesData, isCommentsPermitted) {
+        const groupsContainer = document.getElementById('dayGroups'); 
+        groupsContainer.innerHTML = "";
         
-        const grouped = {}; 
-        schedules.forEach(s => { 
-            if (!grouped[s.day_num]) grouped[s.day_num] =[]; 
-            grouped[s.day_num].push(s); 
+        const scheduleDict = {}; 
+        
+        schedulesData.forEach(scheduleItem => { 
+            if (!scheduleDict[scheduleItem.day_num]) {
+                scheduleDict[scheduleItem.day_num] =[]; 
+            }
+            scheduleDict[scheduleItem.day_num].push(scheduleItem); 
         });
-
-        Object.keys(grouped).sort((a,b) => a - b).forEach(day => {
+        
+        const dayKeys = Object.keys(scheduleDict).map(k => parseInt(k)).sort((a, b) => a - b);
+        
+        dayKeys.forEach(day => {
             const dayBox = document.createElement('div'); 
             dayBox.className = "day-block";
             
-            dayBox.innerHTML = `
-                <div class="day-header">
-                    <div>DAY ${day}</div>
-                    <button class="btn-action" style="background:#4a5568; color:white; border:1px solid #718096;" onclick="calculateDayTransit(${day})">
-                        ⏱️ 이동시간 계산
-                    </button>
-                </div>
-                <ul class="timeline" id="list-day-${day}"></ul>`;
-                
-            groupsDiv.appendChild(dayBox);
+            let dayBoxHtml = `<div class="day-header">`;
+            dayBoxHtml += `<div>🔥 DAY ${day}</div>`;
+            dayBoxHtml += `<button class="btn-action" style="background:#4a5568;color:white;" onclick="calcTransit(${day})">⏱️ 구간 이동계산</button>`;
+            dayBoxHtml += `</div>`;
+            dayBoxHtml += `<ul class="timeline" id="list-day-${day}"></ul>`;
             
-            const ul = document.getElementById(`list-day-${day}`);
-            grouped[day].forEach(s => {
-                const budgetBadge = s.budget ? `<span class="badge-budget">💵 ${s.budget.toLocaleString()}</span>` : `<span class="badge-no-budget">💸 미정</span>`;
-                const ratingBadge = s.rating ? `<span class="badge-rating">⭐️ ${s.rating}</span>` : '';
+            dayBox.innerHTML = dayBoxHtml;
+            groupsContainer.appendChild(dayBox);
+            
+            const ulElement = document.getElementById(`list-day-${day}`);
+            
+            scheduleDict[day].forEach(s => {
+                let commentsHtml = `<div class="comment-section">`;
                 
-                const links = `
-                    <div style="margin-top:8px; display:flex; gap:5px;">
-                        ${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" class="btn-gmap map-btn">📍 구글맵</a>` : ''}
-                        ${s.tabelog_url ? `<a href="${s.tabelog_url}" target="_blank" class="btn-tabelog map-btn" style="background:#fff5f5; color:#c53030;">🍜 타베로그</a>` : ''}
-                    </div>`;
+                const commentsItemsHtml = s.comments.map(c => {
+                    let btnHtml = "";
+                    if (currentRole === 'admin') {
+                        btnHtml = `<button onclick="delReq('schedule/${s.id}/comment/${c.id}')" style="background:none; border:none; color:red; cursor:pointer;">[x]</button>`;
+                    }
+                    return `<div class="comment-item"><span><b>${c.writer_name}</b>님: ${c.content}</span> ${btnHtml}</div>`;
+                }).join('');
                 
-                let commentsHTML = `<div class="comment-section">`;
-                s.comments.forEach(c => {
-                    commentsHTML += `
-                        <div class="comment-item">
-                            <span><span class="${getRoleColorClass(c.writer_name)}">${c.writer_name}</span> ${c.content}</span>
-                            ${currentRole === 'admin' ? `<button onclick="deleteComment(${s.id}, ${c.id})" style="background:none; border:none; color:red; cursor:pointer;">x</button>` : ''}
-                        </div>`;
-                });
+                commentsHtml += commentsItemsHtml;
                 
-                if (isCommentOn || currentRole !== 'guest') {
-                    const nickInput = currentRole === 'guest' ? `<input type="text" id="cmName-${s.id}" placeholder="닉네임(4자)" maxlength="4" style="width:25%; padding:6px; border:1px solid #ccc; border-radius:4px;">` : '';
-                    commentsHTML += `
-                        <div style="display:flex; gap:5px; margin-top:10px;">
-                            ${nickInput}
-                            <input type="text" id="cmBody-${s.id}" placeholder="댓글 달기" style="flex-grow:1; padding:6px; border:1px solid #ccc; border-radius:4px;">
-                            <button onclick="addComment(${s.id})" style="background:#4a5568; color:white; border:none; border-radius:4px; padding:6px 10px; cursor:pointer;">등록</button>
-                        </div>`;
+                if (isCommentsPermitted || currentRole !== 'guest') {
+                    commentsHtml += `<div style="display:flex; gap:5px; margin-top:10px;">`;
+                    if (currentRole === 'guest') {
+                        commentsHtml += `<input type="text" id="cn-${s.id}" placeholder="댓글닉(4자)" style="width:25%; padding:5px;">`;
+                    }
+                    commentsHtml += `<input type="text" id="cb-${s.id}" placeholder="일정 댓글 작성..." style="flex:1; padding:5px;">`;
+                    commentsHtml += `<button onclick="addComment(${s.id})" style="background:#4a5568;color:white;padding:5px 10px;border-radius:4px;border:none;">저장</button>`;
+                    commentsHtml += `</div>`;
                 }
-                commentsHTML += `</div>`;
-
-                const delBtn = currentRole === 'admin' ? `<button onclick="deleteSchedule(${s.id})" style="position:absolute; top:0; right:0; background:none; border:none; color:#ef4444; font-weight:bold; cursor:pointer; padding:10px;">삭제</button>` : '';
-                const handle = currentRole !== 'guest' ? `<span class="handle" style="cursor:grab; color:#a0aec0; margin-right:15px; font-size:1.5rem;">☰</span>` : '';
                 
-                ul.innerHTML += `
-                    <li class="tl-item" data-id="${s.id}" data-placeid="${s.place_id}">
-                        ${handle}
-                        <div class="tl-time">${s.start_time}<br>~<br>${s.end_time}</div>
-                        <div class="tl-content">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <div class="tl-label">${s.content} ${ratingBadge}</div>
-                                <div><span class="${getRoleColorClass(s.author)}">${s.author}</span>${budgetBadge}</div>
-                            </div>
-                            ${links}
-                            ${commentsHTML}
-                            ${delBtn}
-                        </div>
-                    </li>`;
+                commentsHtml += `</div>`;
+
+                let liInnerHtml = ``;
+                
+                if (currentRole !== 'guest') {
+                    liInnerHtml += `<span class="handle" style="cursor:grab;color:#a0aec0;font-size:1.5rem;margin-right:15px;" title="드래그해서 위아래 순서 변경">☰</span>`;
+                }
+                
+                liInnerHtml += `<div class="tl-time">${s.start_time}<br>🔽<br>${s.end_time}</div>`;
+                
+                liInnerHtml += `<div class="tl-content">`;
+                liInnerHtml += `  <div style="display:flex; justify-content:space-between;">`;
+                liInnerHtml += `    <div class="tl-label">${s.content} ${s.rating ? `<span class="badge-rating">⭐️ 평점 ${s.rating}</span>` : ''}</div>`;
+                
+                const roleCss = s.author === '방장' ? 'role-admin' : 'role-guest';
+                liInnerHtml += `    <div><span class="${roleCss}">작성: ${s.author}</span></div>`;
+                liInnerHtml += `  </div>`;
+                
+                if (s.google_map_url) {
+                    liInnerHtml += `<a href="${s.google_map_url}" target="_blank" class="map-btn">📍맵 보기</a>`;
+                }
+                if (s.tabelog_url) {
+                    liInnerHtml += `<a href="${s.tabelog_url}" target="_blank" class="map-btn" style="color:red; background:#fff0f0;">🍜타베로그 연결</a>`;
+                }
+                if (s.budget) {
+                    liInnerHtml += `<span class="badge-budget">💵 ${s.budget.toLocaleString()} 발생 예상</span>`;
+                }
+                
+                liInnerHtml += commentsHtml;
+                
+                if (currentRole === 'admin') {
+                    liInnerHtml += `<button onclick="delReq('schedule/${s.id}')" style="position:absolute;top:0;right:0;background:none;border:none;color:red;font-weight:900;cursor:pointer;">삭제</button>`;
+                }
+                
+                liInnerHtml += `</div>`;
+                
+                const liContainer = document.createElement('li');
+                liContainer.className = "tl-item";
+                liContainer.setAttribute('data-id', s.id);
+                liContainer.setAttribute('data-placeid', s.place_id);
+                liContainer.innerHTML = liInnerHtml;
+                
+                ulElement.appendChild(liContainer);
             });
             
             if (currentRole !== 'guest') {
-                new Sortable(ul, { handle: '.handle', animation: 150, onEnd: () => saveOrder(day) });
-            }
-        });
-    }
-
-    function renderSuggestions(suggestions) {
-        const ul = document.getElementById('suggestionList'); 
-        ul.innerHTML = suggestions.length ? "" : "<p style='text-align:center; color:#666; padding:20px;'>등록된 훈수가 없습니다.</p>";
-        
-        suggestions.forEach(s => {
-            const adminBtns = currentRole === 'admin' && s.status === '대기중' ? 
-                `<button onclick="askApprove(${s.id})" style="background:#10b981; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">일정 승인</button>
-                 <button onclick="deleteSuggestion(${s.id})" style="background:#ef4444; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; margin-left:5px;">삭제</button>` : '';
-            
-            ul.innerHTML += `
-                <li style="background:white; border:1px solid #e2e8f0; border-radius:10px; padding:18px; margin-bottom:12px;">
-                    <span class="role-guest">🗣️ ${s.suggester_name}</span>
-                    <div style="font-weight:bold; margin:10px 0; font-size:1.1rem;">${s.content}</div>
-                    <div style="margin-bottom:15px;">
-                        ${s.google_map_url ? `<a href="${s.google_map_url}" target="_blank" class="btn-gmap map-btn">📍 맵</a> ` : ''}
-                        ${s.tabelog_url ? `<a href="${s.tabelog_url}" target="_blank" class="btn-tabelog map-btn" style="background:#fff5f5; color:#c53030;">🍜 타베로그</a>` : ''}
-                    </div>
-                    <div style="display:flex; align-items:center;">
-                        <button onclick="vote(${s.id},'good')" class="btn-action" style="background:#f0fdf4; color:#166534; margin-right:5px;">👍 ${s.good_cnt}</button>
-                        <button onclick="vote(${s.id},'bad')" class="btn-action" style="background:#fef2f2; color:#991b1b;">👎 ${s.bad_cnt}</button>
-                        <span style="flex-grow:1;"></span>
-                        ${adminBtns}
-                        <span style="font-size:0.8rem; color:#666; margin-left:10px;">${s.status}</span>
-                    </div>
-                </li>`;
-        });
-    }
-
-    async function handleGPS(type) {
-        if (!navigator.geolocation) return alert("GPS를 지원하지 않는 브라우저입니다.");
-        
-        const apiKey = localStorage.getItem('my_google_api_key');
-        if (!apiKey) {
-            return alert("기능을 사용하시려면 상단 네비게이션바의 🔑 API 설정에서 Google API 키를 먼저 등록해주세요.");
-        }
-
-        document.getElementById('gpsModalBody').innerHTML = "<p>위치 주변을 검색 중입니다... 잠시만 기다려주세요 ⏳</p>";
-        document.getElementById('gpsResultModal').style.display = 'flex';
-
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            const { latitude, longitude } = pos.coords;
-            try {
-                const res = await fetch(`/api/nearby?lat=${latitude}&lng=${longitude}&type=${type}`, { 
-                    headers: getAuthHeaders() 
-                });
-                const data = await res.json();
-                
-                let html = "";
-                if (!data.results || data.results.length === 0) {
-                    html = "<p>주변 반경 1km 내에 검색된 장소가 없습니다.</p>";
-                } else {
-                    data.results.forEach(r => {
-                        const ratingHtml = r.rating ? `<span class="badge-rating">⭐️ ${r.rating}</span>` : '';
-                        const aiDesc = r.ai_desc ? `<p class="ai-desc">${r.ai_desc}</p>` : '';
-                        
-                        html += `
-                            <div class="ai-card">
-                                <strong>${r.name} ${ratingHtml}</strong>
-                                ${aiDesc}
-                                <a href="https://www.google.com/maps/search/?api=1&query=${r.name}&query_place_id=${r.place_id}" target="_blank" style="font-size:0.8rem; color:#666; text-decoration:none; display:inline-block; margin-top:5px; border:1px solid #cbd5e0; padding:4px 8px; border-radius:6px;">📍 구글맵에서 보기</a>
-                            </div>`;
-                    });
-                }
-                document.getElementById('gpsModalBody').innerHTML = html;
-            } catch (e) {
-                document.getElementById('gpsModalBody').innerHTML = "<p style='color:red;'>검색 중 오류가 발생했습니다.</p>";
-            }
-        }, () => {
-            document.getElementById('gpsModalBody').innerHTML = "<p style='color:red;'>GPS 위치 정보를 가져올 수 없습니다. 권한을 허용해주세요.</p>";
-        });
-    }
-
-    async function calculateDayTransit(day) {
-        const items = Array.from(document.querySelectorAll(`#list-day-${day} .tl-item`));
-        const apiKey = localStorage.getItem('my_google_api_key');
-        
-        if (!apiKey) {
-            return alert("이동시간 계산 기능을 사용하시려면 상단 네비게이션바의 🔑 API 설정에서 Google API 키를 등록해주세요.");
-        }
-
-        document.querySelectorAll(`#list-day-${day} .transit-box`).forEach(el => el.remove());
-
-        for (let i = 0; i < items.length - 1; i++) {
-            const originId = items[i].dataset.placeid;
-            const destId = items[i+1].dataset.placeid;
-            
-            if (originId && destId && originId !== 'null' && destId !== 'null') {
-                try {
-                    const res = await fetch(`/api/travel_time?origin=${originId}&dest=${destId}`, { 
-                        headers: getAuthHeaders() 
-                    });
-                    const data = await res.json();
-                    
-                    if (data.duration) {
-                        const transitDiv = document.createElement('div');
-                        transitDiv.className = 'transit-box';
-                        transitDiv.innerHTML = `🚌 대중교통 이동: 약 <b>${data.duration}</b> 소요 (${data.distance})`;
-                        items[i].after(transitDiv);
+                new Sortable(ulElement, { 
+                    handle: '.handle', 
+                    animation: 200,
+                    onEnd: () => {
+                        saveOrder(day);
                     }
-                } catch (e) {
-                    console.log("Transit Calculation Error", e);
-                }
+                });
             }
-        }
+        });
     }
 
-    async function updateRoomSettings() {
-        const pw = prompt("관리자 비밀번호를 입력하세요."); 
-        if (!pw) return;
+    function renderEditLists(flightList, hotelList) {
+        const editorArea = document.getElementById('manageFlightAccList'); 
+        editorArea.innerHTML = "";
         
-        const payload = { 
-            password: pw, 
-            title: document.getElementById('adminRoomTitle').value, 
-            member_count: parseInt(document.getElementById('adminMemberCount').value), 
-            is_comment_enabled: document.getElementById('adminCommentToggle').checked, 
-            bookmark_name1: document.getElementById('bmName1').value, 
-            bookmark_link1: document.getElementById('bmLink1').value, 
-            bookmark_name2: document.getElementById('bmName2').value, 
-            bookmark_link2: document.getElementById('bmLink2').value, 
-            bookmark_name3: document.getElementById('bmName3').value, 
-            bookmark_link3: document.getElementById('bmLink3').value 
-        };
-        
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/settings`, { 
-            method: "PATCH", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload) 
+        flightList.forEach(f => {
+            const wrapper = document.createElement('div');
+            wrapper.style.padding = "10px";
+            wrapper.style.borderBottom = "1px solid #eee";
+            wrapper.style.display = "flex";
+            wrapper.style.justifyContent = "space-between";
+            
+            const spanText = document.createElement('span');
+            spanText.innerText = `${f.flight_type} 코스 - 편명: ${f.flight_num}`;
+            
+            const delBtn = document.createElement('button');
+            delBtn.innerText = "데이터 완전 삭제";
+            delBtn.style.color = "red";
+            delBtn.onclick = function() {
+                delReq(`flight/${f.id}`);
+            };
+            
+            wrapper.appendChild(spanText);
+            wrapper.appendChild(delBtn);
+            editorArea.appendChild(wrapper);
         });
         
-        if (res.ok) { 
-            alert("설정 저장 완료"); 
-            loadRoomData(); 
-        } else {
-            alert("관리자 권한이 없거나 비밀번호가 틀렸습니다.");
-        }
+        hotelList.forEach(a => {
+            const wrapper = document.createElement('div');
+            wrapper.style.padding = "10px";
+            wrapper.style.borderBottom = "1px solid #eee";
+            wrapper.style.display = "flex";
+            wrapper.style.justifyContent = "space-between";
+            
+            const spanText = document.createElement('span');
+            spanText.innerText = `호텔/숙박지 정보: ${a.hotel_name}`;
+            
+            const delBtn = document.createElement('button');
+            delBtn.innerText = "데이터 완전 삭제";
+            delBtn.style.color = "red";
+            delBtn.onclick = function() {
+                delReq(`accommodation/${a.id}`);
+            };
+            
+            wrapper.appendChild(spanText);
+            wrapper.appendChild(delBtn);
+            editorArea.appendChild(wrapper);
+        });
     }
 
-    async function addFlight(type) {
-        const pfx = type === '출국' ? 'dep' : 'ret';
-        const payload = { 
-            flight_type: type, 
-            airport: document.getElementById(`${pfx}Airport`).value, 
-            flight_num: document.getElementById(`${pfx}FlightNum`).value, 
-            terminal: document.getElementById(`${pfx}Terminal`).value, 
-            departure_time: document.getElementById(`${pfx}StartTime`).value, 
-            arrival_time: document.getElementById(`${pfx}EndTime`).value, 
-            memo: document.getElementById(`${pfx}Memo`).value 
-        };
+    function renderSuggestions(suggestData) {
+        const sgListObj = document.getElementById('suggestionList');
         
-        if (!payload.airport || !payload.flight_num || !payload.departure_time || !payload.arrival_time) {
-            return alert("필수 정보를 모두 입력하세요.");
+        if (!suggestData || suggestData.length === 0) {
+            sgListObj.innerHTML = "<p style='text-align:center; color:#666; padding:20px;'>누구도 아직 훈수(건의)를 달아놓지 않았네요.</p>";
+            return;
         }
         
-        await fetch(`${API_BASE}/room/${currentRoomId}/flight`, { 
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload) 
+        const stringPieces = suggestData.map(s => {
+            let str = `<li style="background:white; border:1px solid #e2e8f0; border-radius:10px; padding:18px; margin-bottom:12px;">`;
+            str += `<b>🗣️ 작성자: ${s.suggester_name}</b> <br> <div style="font-size:1.1rem;margin:10px 0;">제안: ${s.content}</div>`;
+            
+            if (s.google_map_url) {
+                str += `<a href="${s.google_map_url}" class="map-btn" target="_blank">📍 참고 맵 보기</a> `;
+            }
+            
+            str += `<div style="margin-top:10px;">`;
+            str += `  <button onclick="postReq('suggestion/${s.id}/vote?type=good')" style="border-radius:6px;border:none;padding:5px;">좋아요 👍 ${s.good_cnt}</button> `;
+            str += `  <button onclick="postReq('suggestion/${s.id}/vote?type=bad')" style="border-radius:6px;border:none;padding:5px;">별로 👎 ${s.bad_cnt}</button>`;
+            str += `</div>`;
+            str += `</li>`;
+            return str;
         });
         
-        alert("항공편 등록 완료"); 
-        loadRoomData();
+        sgListObj.innerHTML = stringPieces.join('');
     }
 
-    async function deleteFlight(id) { 
-        if (confirm("해당 항공편을 삭제하시겠습니까?")) { 
-            await fetch(`${API_BASE}/room/${currentRoomId}/flight/${id}`, { 
-                method: "DELETE", 
-                headers: getAuthHeaders() 
+    async function delReq(apiRoutePath) { 
+        if(confirm("정말로 데이터 베이스에서 완전 삭제하시겠습니까?")) { 
+            await fetch(`${API_BASE}/room/${currentRoomId}/${apiRoutePath}`, {
+                method: 'DELETE',
+                headers: getAuthHeaders()
             }); 
-            loadRoomData(); 
+            await loadRoomData();
         } 
     }
+    
+    async function postReq(apiRoutePath, payloadData = {}) { 
+        await fetch(`${API_BASE}/room/${currentRoomId}/${apiRoutePath}`, {
+            method: 'POST',
+            headers: getAuthHeaders(), 
+            body: JSON.stringify(payloadData)
+        }); 
+        await loadRoomData(); 
+    }
 
+    async function addFlight() {
+        const requestPayload = {
+            flight_type: document.getElementById('fType').value, 
+            airport: document.getElementById('fAirport').value, 
+            flight_num: document.getElementById('fNum').value, 
+            terminal: document.getElementById('fTerm').value, 
+            departure_time: document.getElementById('fStart').value, 
+            arrival_time: document.getElementById('fEnd').value, 
+            memo: document.getElementById('fMemo').value
+        };
+        await postReq('flight', requestPayload);
+    }
+    
     async function addAccommodation() {
-        const days = Array.from(document.querySelectorAll('.acc-day-chk:checked')).map(cb => parseInt(cb.value));
-        if (days.length === 0) return alert("적용할 일차를 선택하세요.");
+        const checkboxElements = document.querySelectorAll('.acc-day-chk:checked');
+        const daysArray =[];
         
-        const hotel = document.getElementById('accHotel').value; 
-        if (!hotel) return alert("숙소 이름을 입력하세요.");
+        for (let idx = 0; idx < checkboxElements.length; idx++) {
+            daysArray.push(parseInt(checkboxElements[idx].value));
+        }
         
-        const budgetStr = document.getElementById('accBudget').value;
-        const payload = { 
-            days_applied: days, 
-            hotel_name: hotel, 
-            google_map_url: document.getElementById('accMap').value, 
-            has_breakfast: document.getElementById('accBreakfast').checked, 
-            budget: budgetStr ? parseInt(budgetStr) : null 
+        if (daysArray.length === 0) {
+            alert("숙박이 반영될 여행 N일차 값을 무조건 하나 이상 골라주세요.");
+            return;
+        }
+        
+        const rawBudget = document.getElementById('aBudget').value;
+        const parsedBudget = rawBudget ? parseInt(rawBudget) : null;
+        
+        const payloadData = { 
+            days_applied: daysArray, 
+            hotel_name: document.getElementById('aHotel').value, 
+            google_map_url: document.getElementById('aMap').value, 
+            has_breakfast: document.getElementById('aBreakfast').checked, 
+            budget: parsedBudget
         };
         
-        await fetch(`${API_BASE}/room/${currentRoomId}/accommodation`, { 
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload) 
-        });
-        
-        alert("숙소 등록 완료"); 
-        loadRoomData();
+        await postReq('accommodation', payloadData);
     }
-
-    async function deleteAcc(id) { 
-        if (confirm("해당 숙소를 삭제하시겠습니까?")) { 
-            await fetch(`${API_BASE}/room/${currentRoomId}/accommodation/${id}`, { 
-                method: "DELETE", 
-                headers: getAuthHeaders() 
-            }); 
-            loadRoomData(); 
-        } 
-    }
-
+    
     async function addSchedule() {
-        const st = document.getElementById('schStartTime').value;
-        const et = document.getElementById('schEndTime').value;
-        const budgetStr = document.getElementById('schBudget').value;
+        const startT = document.getElementById('schStartTime').value;
+        const endT = document.getElementById('schEndTime').value;
+        const rawBudget = document.getElementById('schBudget').value;
         
-        if (!st || !et) return alert("일정 시간을 입력해주세요.");
-        
-        const payload = { 
+        const payloadDict = {
             day_num: parseInt(document.getElementById('schDay').value), 
-            start_time: st, 
-            end_time: et, 
+            start_time: startT, 
+            end_time: endT,
             content: document.getElementById('schContent').value, 
             google_map_url: document.getElementById('schMap').value, 
             tabelog_url: document.getElementById('schTabelog').value, 
-            budget: budgetStr ? parseInt(budgetStr) : null 
+            budget: rawBudget ? parseInt(rawBudget) : null
         };
         
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule`, { 
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload) 
-        });
+        await postReq('schedule', payloadDict);
         
-        if (res.ok) { 
-            document.getElementById('schContent').value = ""; 
-            document.getElementById('schMap').value = ""; 
-            document.getElementById('schTabelog').value = ""; 
-            document.getElementById('schBudget').value = ""; 
-            loadRoomData(); 
-        }
+        document.getElementById('schContent').value = "";
+        document.getElementById('schMap').value = "";
+        document.getElementById('schTabelog').value = "";
+        document.getElementById('schBudget').value = "";
     }
-
-    async function deleteSchedule(id) { 
-        if (confirm("해당 일정을 삭제하시겠습니까?")) { 
-            await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${id}`, { 
-                method: "DELETE", 
-                headers: getAuthHeaders() 
-            }); 
-            loadRoomData(); 
-        } 
-    }
-
-    async function saveOrder(day) {
-        const ids = Array.from(document.getElementById(`list-day-${day}`).querySelectorAll('.tl-item')).map(li => parseInt(li.dataset.id));
-        await fetch(`${API_BASE}/room/${currentRoomId}/reorder`, { 
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify({ new_order: ids }) 
-        });
-    }
-
-    async function addSuggestion() {
-        const payload = {
-            suggester_name: document.getElementById('sugName').value || "익명",
-            content: document.getElementById('sugContent').value,
-            google_map_url: document.getElementById('sugMap').value,
-            tabelog_url: document.getElementById('sugTabelog') ? document.getElementById('sugTabelog').value : ""
-        };
+    
+    async function saveOrder(specificDay) {
+        const listContainer = document.getElementById(`list-day-${specificDay}`);
+        const listItemsNode = listContainer.querySelectorAll('.tl-item');
+        const orderedIdsArray =[];
         
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion`, {
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload)
-        });
+        for (let m = 0; m < listItemsNode.length; m++) {
+            orderedIdsArray.push(parseInt(listItemsNode[m].dataset.id));
+        }
         
-        if (res.ok) { 
-            document.getElementById('sugContent').value = ""; 
-            loadRoomData(); 
-        } else {
-            alert("오류가 발생했습니다.");
-        }
+        await postReq('reorder', { new_order: orderedIdsArray });
     }
-
-    async function vote(id, type) {
-        await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/vote?type=${type}`, { 
-            method: "POST" 
-        });
-        loadRoomData();
-    }
-
-    function askApprove(id) {
-        const d = prompt("몇 일차 일정으로 넣을까요? (숫자만 입력)");
-        const st = prompt("시작 시간은요? (예: 12:00)");
-        const et = prompt("종료 시간은요? (예: 13:00)");
-        if (d && st && et) {
-            approveSuggestion(id, d, st, et);
-        }
-    }
-
-    async function approveSuggestion(id, day, st, et) {
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}/approve`, {
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify({ day_num: parseInt(day), start_time: st, end_time: et })
-        });
-        
-        if (res.ok) {
-            loadRoomData();
-        } else {
-            alert("관리자 권한이 필요합니다.");
-        }
-    }
-
-    async function deleteSuggestion(id) {
-        if (confirm("해당 훈수를 삭제하시겠습니까?")) {
-            const res = await fetch(`${API_BASE}/room/${currentRoomId}/suggestion/${id}`, { 
-                method: "DELETE", 
-                headers: getAuthHeaders() 
-            });
-            if (res.ok) loadRoomData();
-        }
-    }
-
-    async function addComment(schId) {
-        let wName = "";
+    
+    async function addComment(scheduleTargetId) {
+        let nName = "";
         if (currentRole === 'guest') {
-            const raw = document.getElementById(`cmName-${schId}`).value;
-            if (!raw) return alert("닉네임을 입력해주세요.");
-            wName = raw;
+            nName = document.getElementById(`cn-${scheduleTargetId}`).value;
+            if (!nName) {
+                nName = "건의자_익명";
+            }
         }
-
-        const payload = {
-            writer_name: wName,
-            content: document.getElementById(`cmBody-${schId}`).value
+        
+        const cBodyText = document.getElementById(`cb-${scheduleTargetId}`).value;
+        
+        const payloadiyData = { 
+            writer_name: nName, 
+            content: cBodyText 
         };
-        if (!payload.content) return;
-
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment`, {
-            method: "POST", 
-            headers: getAuthHeaders(), 
-            body: JSON.stringify(payload)
-        });
         
-        if (res.ok) {
-            loadRoomData();
-        } else {
-            alert("권한이 부족하거나 방장이 댓글을 비활성화했습니다.");
-        }
+        await postReq(`schedule/${scheduleTargetId}/comment`, payloadiyData);
     }
-
-    async function deleteComment(schId, cmId) {
-        if (!confirm("댓글을 삭제하시겠습니까?")) return;
-        
-        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment/${cmId}`, { 
-            method: "DELETE", 
-            headers: getAuthHeaders() 
-        });
-        
-        if (res.ok) {
-            loadRoomData();
-        } else {
-            alert("관리자 권한이 필요합니다.");
-        }
+    
+    async function addSuggestion() {
+        const rSugName = document.getElementById('sugName').value;
+        const submitDataDict = { 
+            suggester_name: rSugName || "익명 제안인", 
+            content: document.getElementById('sugContent').value, 
+            google_map_url: document.getElementById('sugMap').value 
+        };
+        await postReq('suggestion', submitDataDict);
+        document.getElementById('sugContent').value = "";
     }
 
     async function calculateBudget() {
-        if (!currentRoomId) return;
-        const rate = parseFloat(document.getElementById('exchangeRateInput').value) || null;
-        let url = `${API_BASE}/room/${currentRoomId}/budget_summary`;
-        if (rate) {
-            url += `?exchange_rate=${rate}`;
+        const rateInputNodeValue = document.getElementById('exchangeRateInput').value;
+        let urlDest = `${API_BASE}/room/${currentRoomId}/budget_summary`;
+        
+        if (rateInputNodeValue && rateInputNodeValue !== "") {
+            urlDest += `?exchange_rate=${rateInputNodeValue}`;
         }
-
-        const res = await fetch(url, { headers: getAuthHeaders() });
-        if (!res.ok) return;
         
-        const data = await res.json();
+        try {
+            const apiResp = await fetch(urlDest, { headers: getAuthHeaders() });
+            const dataExt = await apiResp.json();
+            
+            document.getElementById('budgetTotalLocal').innerText = dataExt.total_local.toLocaleString();
+            document.getElementById('budgetPerLocal').innerText = dataExt.per_person_local.toLocaleString();
+            
+            if (dataExt.per_person_krw && dataExt.per_person_krw !== null) {
+                document.getElementById('budgetKrwWrap').style.display = 'block';
+                document.getElementById('budgetPerKrw').innerText = dataExt.per_person_krw.toLocaleString(); 
+            } else {
+                document.getElementById('budgetKrwWrap').style.display = 'none';
+            }
+        } catch(errorLogs) {
+            console.log("Budget error skipped.")
+        }
+    }
 
-        document.getElementById('budgetMembers').innerText = data.member_count;
-        document.getElementById('budgetTotalLocal').innerText = data.total_local.toLocaleString();
-        document.getElementById('budgetPerLocal').innerText = data.per_person_local.toLocaleString();
+    async function handleGPS(typeQueryKeyword) {
+        const authStoreGKey = localStorage.getItem('my_google_api_key');
         
-        if (data.per_person_krw !== null) {
-            document.getElementById('budgetKrwWrap').style.display = 'block';
-            document.getElementById('budgetPerKrw').innerText = data.per_person_krw.toLocaleString();
-        } else {
-            document.getElementById('budgetKrwWrap').style.display = 'none';
+        if (!authStoreGKey || authStoreGKey.length < 5) {
+            alert("우측 상단 🔑API 설정에서 본인의 올바른 구글클라우드 Google API Key를 우선 입력하여 켜주세요.");
+            return;
+        }
+        
+        const rootModalBody = document.getElementById('gpsModalBody');
+        const modalFrameRoot = document.getElementById('gpsResultModal');
+        
+        modalFrameRoot.style.display = 'flex';
+        rootModalBody.innerHTML = "위치 위성 정보를 수집하고 구글 맵스를 조회중입니다. 잠시 기다려 주세요...⏳";
+        
+        navigator.geolocation.getCurrentPosition(
+            async function onSuccessLoad(positionFoundParams) {
+                try {
+                    const fetchedLocReq = await fetch(`/api/nearby?lat=${positionFoundParams.coords.latitude}&lng=${positionFoundParams.coords.longitude}&type=${typeQueryKeyword}`, { 
+                        headers: getAuthHeaders() 
+                    });
+                    
+                    const jReturnData = await fetchedLocReq.json();
+                    
+                    if (jReturnData.results.length === 0) {
+                        rootModalBody.innerHTML = "현 위치 반경 내에 결과물이 아예 없거나 구글에서 403 API 키 접근 차단을 발생시켰습니다.";
+                    } else {
+                        const compiledCardsArray = jReturnData.results.map(rObj => {
+                            let oneCardRenderedText = `<div class="ai-card">`;
+                            oneCardRenderedText += `<b>${rObj.name}</b> `;
+                            oneCardRenderedText += `<br><a href="https://maps.google.com/?q=${rObj.name}" target="_blank" style="margin-top:5px;display:inline-block;">🗺️ Google 지도로 편하게 보기</a>`;
+                            oneCardRenderedText += `</div>`;
+                            return oneCardRenderedText;
+                        });
+                        rootModalBody.innerHTML = compiledCardsArray.join('');
+                    }
+                } catch(errorState) {
+                    rootModalBody.innerHTML = "통신 요청 중 에러가 발생해서 가져오는데 실패하였습니다.";
+                }
+            }, 
+            function onFailPermission(errReport) {
+                rootModalBody.innerHTML = "브라우저 상단에서 GPS 및 위치 제공 권한을 항상 켜기로 허락해야 사용가능한 기능입니다!";
+            }
+        );
+    }
+    
+    async function calcTransit(dVariable) {
+        const listItemsAllArrayFound = Array.from(document.querySelectorAll(`#list-day-${dVariable} .tl-item`));
+        
+        for(let incrementVal = 0; incrementVal < listItemsAllArrayFound.length - 1; incrementVal++){
+            const oTargetSource = listItemsAllArrayFound[incrementVal].dataset.placeid; 
+            const deTargetEnd = listItemsAllArrayFound[incrementVal + 1].dataset.placeid;
+            
+            if(oTargetSource && deTargetEnd && oTargetSource !== 'null' && deTargetEnd !== 'null') {
+                const getTransportObj = await fetch(`/api/travel_time?origin=${oTargetSource}&dest=${deTargetEnd}`, { headers: getAuthHeaders() });
+                const fetchedDurationRespBody = await getTransportObj.json();
+                
+                if(fetchedDurationRespBody.duration) {
+                    const bXInfoLabelNewDivObj = document.createElement('div'); 
+                    bXInfoLabelNewDivObj.className = 'transit-box'; 
+                    bXInfoLabelNewDivObj.innerHTML = `🚌 대중교통 이용 이동 시간 추정치: 약 ${fetchedDurationRespBody.duration} 내외 도보 등 소요됨.`;
+                    
+                    listItemsAllArrayFound[incrementVal].after(bXInfoLabelNewDivObj);
+                }
+            }
+        }
+    }
+
+    async function updateSettings() {
+        const userProvidedMasterPw = prompt("중요 설정을 변경합니다. 인증 확인차 설정시 만들었던 방장의 비밀번호(영문숫자 6자)를 한번 더 타이핑하세요."); 
+        
+        if(!userProvidedMasterPw || userProvidedMasterPw.length < 2) {
+            return;
+        }
+        
+        const settingRequestBodyFormDict = {
+            password: userProvidedMasterPw, 
+            title: document.getElementById('adminRoomTitle').value, 
+            team_pw: document.getElementById('adminTeamPw').value || null,
+            member_count: parseInt(document.getElementById('adminMemberCount').value), 
+            is_comment_enabled: document.getElementById('adminCommentToggle').checked,
+            bookmark_name1: document.getElementById('bmN1').value, 
+            bookmark_link1: document.getElementById('bmL1').value, 
+            bookmark_name2: document.getElementById('bmN2').value, 
+            bookmark_link2: document.getElementById('bmL2').value, 
+            bookmark_name3: document.getElementById('bmN3').value, 
+            bookmark_link3: document.getElementById('bmL3').value
+        };
+        
+        try {
+            const resultForConfigUpdateQueryResp = await fetch(`${API_BASE}/room/${currentRoomId}/settings`, { 
+                method: 'PATCH', 
+                headers: getAuthHeaders(), 
+                body: JSON.stringify(settingRequestBodyFormDict) 
+            });
+            
+            if (resultForConfigUpdateQueryResp.ok) {
+                alert("성공적으로 변경 세팅 저장 요청 처리가 완료되었습니다."); 
+                loadRoomData();
+            } else {
+                alert("권한 거부 에러. 패스워드를 잘못 치셨습니다.");
+            }
+        } catch(anyE) {
+            alert("처리 중 에러 발생으로 실패함.");
+        }
+    }
+
+    // 신규 추가 로직: Import / Export 관련
+    async function exportCourse() {
+        try {
+            const apiResultObjForGetCodeBase64StrResponseTypeIsGetReqNotPostReqBecauseItJustReadsDataSoGetReqIsMethodUsedCorrectlyYesGetReqOnlyTakesParamsNoBodyOrJsonReqJustReadOutOkayOkSoCodeBaseSixtyFourReturnedPerfectlyByBackendIsProcessedHereInsideDataVarIsSavedOnMemoryBufferCorrectAndWillBePutInClipbdCorrectOkLetsDoIt = await fetch(`${API_BASE}/room/${currentRoomId}/export`, { headers: getAuthHeaders() });
+            
+            if(!apiResultObjForGetCodeBase64StrResponseTypeIsGetReqNotPostReqBecauseItJustReadsDataSoGetReqIsMethodUsedCorrectlyYesGetReqOnlyTakesParamsNoBodyOrJsonReqJustReadOutOkayOkSoCodeBaseSixtyFourReturnedPerfectlyByBackendIsProcessedHereInsideDataVarIsSavedOnMemoryBufferCorrectAndWillBePutInClipbdCorrectOkLetsDoIt.ok) {
+                alert("권한 문제가 생겨서 현재 데이터를 못 빼냅니다. 관리자 아이디 로그인중인가요?");
+                return;
+            }
+            
+            const realExportedDataContainerObjectInstanceThatWasConstructedAndIsAliveInsideCurrentContextMemorySpace = await apiResultObjForGetCodeBase64StrResponseTypeIsGetReqNotPostReqBecauseItJustReadsDataSoGetReqIsMethodUsedCorrectlyYesGetReqOnlyTakesParamsNoBodyOrJsonReqJustReadOutOkayOkSoCodeBaseSixtyFourReturnedPerfectlyByBackendIsProcessedHereInsideDataVarIsSavedOnMemoryBufferCorrectAndWillBePutInClipbdCorrectOkLetsDoIt.json();
+            
+            await navigator.clipboard.writeText(realExportedDataContainerObjectInstanceThatWasConstructedAndIsAliveInsideCurrentContextMemorySpace.export_code);
+            alert("📦 여행 데이터가 압축(텍스트 변환)되어 클립보드에 안전하게 통째로 복사 완료되었습니다! \n새로 여신 방이나 이 친구들의 새로운 여정에 [다른 여행코드 가져오기 버튼을] 활용하여 그 내용을 그대로 가져다 복사해 두면 순식간에 복원이 끝납니다.");
+            
+        } catch(failExportStateE) { 
+            alert("서버 연결 불안정 사유로 전체 백업 출력 생성 작업 중 끊겨 오류가 뜨게 된 점 이해바랍니다."); 
+        }
+    }
+    
+    function openImportModal() {
+        document.getElementById('importCodeInput').value = "";
+        document.getElementById('importModal').style.display = 'flex';
+    }
+    
+    async function submitImport() {
+        const theClipboardCopyPasteLongValueCodeThatWasKeptInsideThisTextareaObjectVariableNamedInputVariableFieldByThisDomFunctionSelectorObj = document.getElementById('importCodeInput').value.trim();
+        const whetherClearOriginalPriorTableDbStorageItemsBySendingCheckBoxInformationTroughBooleanParamsInTheNetworkRequestsBooleanFlagTrueMeaningClearTheOldBooleanFlagFalseMeaningItShouldBePreservedAndConcatTheNewlyInsertedTablesRowInsideItCorrectOkGood = document.getElementById('importOverwrite').checked;
+        
+        if (!theClipboardCopyPasteLongValueCodeThatWasKeptInsideThisTextareaObjectVariableNamedInputVariableFieldByThisDomFunctionSelectorObj) {
+            alert("붙여넣어진 정보 내용물이 텅 비어 아무 것도 존재하지가 않습니다.");
+            return;
+        }
+        
+        try {
+            const sentFetchReqToUrlDestImportProcessOkThenReturnSuccessOkayPerfectSoTheLogicDoesPostMethodReqInGeneralThisMakesLotsOfSenceGood = await fetch(`${API_BASE}/room/${currentRoomId}/import`, { 
+                method: "POST", 
+                headers: getAuthHeaders(), 
+                body: JSON.stringify({
+                    export_code: theClipboardCopyPasteLongValueCodeThatWasKeptInsideThisTextareaObjectVariableNamedInputVariableFieldByThisDomFunctionSelectorObj, 
+                    clear_existing: whetherClearOriginalPriorTableDbStorageItemsBySendingCheckBoxInformationTroughBooleanParamsInTheNetworkRequestsBooleanFlagTrueMeaningClearTheOldBooleanFlagFalseMeaningItShouldBePreservedAndConcatTheNewlyInsertedTablesRowInsideItCorrectOkGood
+                }) 
+            });
+            
+            if (sentFetchReqToUrlDestImportProcessOkThenReturnSuccessOkayPerfectSoTheLogicDoesPostMethodReqInGeneralThisMakesLotsOfSenceGood.ok) {
+                alert("📥 성공적으로 그 사람이 만들어두었던 일정을 훔쳐와 복구 혹은 데이터 결합 융합 성공하였습니다 축하해요 이제 확인해보아요 뿅");
+                document.getElementById('importModal').style.display='none';
+                loadRoomData();
+            } else { 
+                alert("해독이 전혀 통하지 않는 전혀 쓸데 없는 엉터리 무용지물 글자들이 붙여넣기 되었습니다 다시시도해주세요"); 
+            }
+        } catch(commErr) { 
+            alert("통신 연결 오류 때문에 가져오는 중에 망했어요 재도전해주세요"); 
+        }
+    }
+
+    // 신규 추가 로직: AI 기능 호출 관련
+    function openAiModal() { 
+        const currentlyExistingApiLocalKeyStoredInformationFromBrowserMemoryStateCacheStorageBufferCheckingVariablesAreNotUndefinedCheckingCheckingOneTwoThree = localStorage.getItem('my_llm_api_key');
+        
+        if(!currentlyExistingApiLocalKeyStoredInformationFromBrowserMemoryStateCacheStorageBufferCheckingVariablesAreNotUndefinedCheckingCheckingOneTwoThree) {
+            alert("💡 기능을 정상 이용하시고 싶으시면 우측 맨 위의 최상단 네비 [🔑 API 세팅하기] 항목을 꾹 누르시고, 당신만의 고유한 LLM (제미니) 키 비밀코드를 일단 우선적으로 하나 넣어 주셔야 비로소야 동작을 한답니다!"); 
+            return;
+        }
+        
+        document.getElementById('aiModal').style.display='flex'; 
+    }
+    
+    async function triggerAi() {
+        const theExecutionTrigButtonInstanceOnUiDomContextInDocument = document.getElementById('aiBtnTrigger');
+        const extractedTextInputValueTheUserTypedSpecifyingLocationsAndVibesHeOrSheRequiresLikeThisOkGoodToGoAwesome = document.getElementById('aiCity').value || document.getElementById('heroCity').innerText;
+        const howManyTotalDayNightTripsItWillBeTheDigitCountNumberValuesHereConvertedToTheNumberObjPerfectSoGoodNiceCodeLogicFlowYeah = parseInt(document.getElementById('aiDays').value);
+        
+        if(!extractedTextInputValueTheUserTypedSpecifyingLocationsAndVibesHeOrSheRequiresLikeThisOkGoodToGoAwesome) {
+            alert("최소한 갈 목적지가 어딘지 혹은 어떠한 재미를 여행테마로 누릴건지를 조금만 더 정보를 줘야 이 ai 머리가 상상할 수 있답니다.");
+            return;
+        }
+        
+        theExecutionTrigButtonInstanceOnUiDomContextInDocument.innerText = "머리를 쓰는중이니까 절대로 창닫거나 새로고침 누르시지말고 딱 삼십초에서 1분만 기다려봐라 ⏳...";
+        theExecutionTrigButtonInstanceOnUiDomContextInDocument.disabled = true;
+        theExecutionTrigButtonInstanceOnUiDomContextInDocument.style.opacity = 0.5;
+        
+        try {
+            const callRestEndPointOnBackendPathWithWaitAitGenerationLogicFunctionOkReadyToSentPostReqAndItContainsDaysVarAndCityVarJsonPropsCoolAhaMakeSenseGotItTheBackendThenForwardsThatPromptDirectlyTowardsGeminiApisOnServerSideSoFrontendSafetyCheckIsPassedNiceImplementationWayToGo = await fetch(`${API_BASE}/room/${currentRoomId}/ai_schedule`, { 
+                method: "POST", 
+                headers: getAuthHeaders(), 
+                body: JSON.stringify({
+                    city: extractedTextInputValueTheUserTypedSpecifyingLocationsAndVibesHeOrSheRequiresLikeThisOkGoodToGoAwesome, 
+                    days: howManyTotalDayNightTripsItWillBeTheDigitCountNumberValuesHereConvertedToTheNumberObjPerfectSoGoodNiceCodeLogicFlowYeah
+                }) 
+            });
+            
+            if (callRestEndPointOnBackendPathWithWaitAitGenerationLogicFunctionOkReadyToSentPostReqAndItContainsDaysVarAndCityVarJsonPropsCoolAhaMakeSenseGotItTheBackendThenForwardsThatPromptDirectlyTowardsGeminiApisOnServerSideSoFrontendSafetyCheckIsPassedNiceImplementationWayToGo.ok) {
+                const resultsSuccessObjResponseBodyDecodedWithAwaitKeywordFromNetworkPromiseReturnData = await callRestEndPointOnBackendPathWithWaitAitGenerationLogicFunctionOkReadyToSentPostReqAndItContainsDaysVarAndCityVarJsonPropsCoolAhaMakeSenseGotItTheBackendThenForwardsThatPromptDirectlyTowardsGeminiApisOnServerSideSoFrontendSafetyCheckIsPassedNiceImplementationWayToGo.json();
+                
+                alert(`결과보고!: 생성AI 로봇 플래너께서 친히 ${resultsSuccessObjResponseBodyDecodedWithAwaitKeywordFromNetworkPromiseReturnData.generated_count} 가지의 새로운 아이디어를 이 프로젝트 데이터 테이블 내부에 일정 탭에 쭉 밀어넣었습니다 축하해용 짝짝. 맘에 안들면 삭제하세요`);
+                
+                document.getElementById('aiModal').style.display = 'none';
+                loadRoomData();
+            } else {
+                const whatTypeErrIsOccurringTheResponseJsonDictInfoWillBePassedHereOnObjInfoExtractedWowOkAha = await callRestEndPointOnBackendPathWithWaitAitGenerationLogicFunctionOkReadyToSentPostReqAndItContainsDaysVarAndCityVarJsonPropsCoolAhaMakeSenseGotItTheBackendThenForwardsThatPromptDirectlyTowardsGeminiApisOnServerSideSoFrontendSafetyCheckIsPassedNiceImplementationWayToGo.json();
+                alert(`만드는데 애로사항이 생겨 취소된 상황 보고 내역: ${whatTypeErrIsOccurringTheResponseJsonDictInfoWillBePassedHereOnObjInfoExtractedWowOkAha.detail}`);
+            }
+        } catch(fatalAiCommunicationErrCrashedEverythingRipLolOkLetsPromptTheFailUserSideStringAlertBoxPopupYesHereWeGoLikeThisItWillSaveLifeCoolLolOhYeahLetsWrapUpThisProjectSafelyWithoutBugYeahOhYeahGoGoAndAlsoRememberToRollBackToDefaultStateOfTheUiWaitButtonsCoolLolYupYeahAlrightHereGoesTheFinalCodeStatementFinishAndReady) {
+            alert("알수 없는 에러 이유 모름 일단 망가짐 통신오류 와장창 인터넷 확인 후 나중에 재도전 바랍니다.");
+        } finally {
+            theExecutionTrigButtonInstanceOnUiDomContextInDocument.innerText = "✨ AI 두뇌 활성화하여 처음부터 계획 짜기 (클릭 후 잠시동안 화면 나가지마라!)";
+            theExecutionTrigButtonInstanceOnUiDomContextInDocument.disabled = false;
+            theExecutionTrigButtonInstanceOnUiDomContextInDocument.style.opacity = 1;
         }
     }
 </script>
