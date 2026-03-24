@@ -1,1907 +1,1149 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""easydsd v0.12 - DART 감사보고서 변환 도구
-완전체: DSD↔Excel 무결점 엔진 + AI재무검증 + 전기금액검증 + DSD Diff비교 + 롤오버
-"""
-import os, re, sys, io, zipfile, threading, socket, time, json, base64
-if sys.platform == 'win32':
+import os
+import re
+import json
+import base64
+import random
+import string
+import requests
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+import psycopg2
+from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from pydantic import BaseModel, validator
+
+# ─────────────────────────────────────────────
+# 앱 초기화
+# ─────────────────────────────────────────────
+app = FastAPI(title="Easy Schedule Pro API", version="5.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─────────────────────────────────────────────
+# 보안 설정
+# ─────────────────────────────────────────────
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "easytrip-default-secret-change-in-production")
+ALGORITHM  = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7   # 7일
+
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+bearer_scheme = HTTPBearer(auto_error=False)
+
+# ─────────────────────────────────────────────
+# DB 설정
+# ─────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+# ─────────────────────────────────────────────
+# Gemini 모델 매핑 (최신 Gemini 3.1 Pro 및 3 Flash 모델 직접 호출)
+# ─────────────────────────────────────────────
+GEMINI_MODEL_MAP = {
+    "gemini-3-flash": "gemini-3-flash",
+    "gemini-3.1-pro": "gemini-3.1-pro",
+}
+
+# ─────────────────────────────────────────────
+# Google Maps API 유틸리티
+# ─────────────────────────────────────────────
+def get_google_place_info(url: str, api_key: str):
+    """구글맵 URL에서 장소 정보를 가져오는 공식 API 로직"""
+    if not api_key or not url:
+        return None
     try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except Exception: pass
+        if "goo.gl" in url or "maps.app.goo.gl" in url:
+            res = requests.head(url, allow_redirects=True, timeout=5)
+            url = res.url
 
-IS_FROZEN = getattr(sys, 'frozen', False) or hasattr(sys, '_MEIPASS')
-BASE_DIR  = os.path.dirname(sys.executable if IS_FROZEN else os.path.abspath(__file__))
+        name_match = re.search(r'/place/([^/]+)', url)
+        if name_match:
+            query = requests.utils.unquote(name_match.group(1).replace('+', ' '))
+            search_res = requests.get(
+                f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}&key={api_key}&language=ko",
+                timeout=5
+            ).json()
 
-try:
-    from flask import Flask, request, send_file, jsonify, render_template_string, Response
-    import openpyxl
-    from openpyxl.styles import PatternFill, Font, Alignment
-    from openpyxl.utils import get_column_letter
-except ImportError:
-    if IS_FROZEN: sys.exit(1)
-    import subprocess
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'flask', 'openpyxl', '-q'])
-    from flask import Flask, request, send_file, jsonify, render_template_string, Response
-    import openpyxl
-    from openpyxl.styles import PatternFill, Font, Alignment
-    from openpyxl.utils import get_column_letter
+            if search_res.get("results"):
+                place_id = search_res["results"][0]["place_id"]
+                details_res = requests.get(
+                    f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields=name,rating,geometry,opening_hours&key={api_key}&language=ko",
+                    timeout=5
+                ).json().get("result", {})
 
-# AI SDK 선택적 로드 (없어도 기본 기능 동작)
-try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    genai = None
-    GENAI_AVAILABLE = False
-
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    anthropic = None
-    ANTHROPIC_AVAILABLE = False
-
-# ── 1. 상수 정의 ──────────────────────────────────────────────────────────────
-EDIT_COLOR   = 'FFF2CC'   # 일반 편집 셀 배경 (노랑)
-HEADER_COLOR = 'DEEAF1'   # 헤더 행 배경 (파랑)
-SUM_COLOR    = 'E0F7FA'   # 합계 행 배경 (하늘)
-PARA_COLOR   = 'E8F5E9'   # 단락 배경 (연초록)
-FMT_ACCOUNT  = '#,##0;(#,##0);"-"'
-FMT_DECIMAL  = '#,##0.00'
-FIN_TABLE_MAP = [
-    (['재 무 상 태 표'], '🏦재무상태표'),
-    (['포 괄 손 익 계 산 서'], '💹포괄손익계산서'),
-    (['자 본 변 동 표'], '📈자본변동표'),
-    (['현 금 흐 름 표'], '💰현금흐름표')
-]
-FIN_PREFIXES = ('🏦','💹','📈','💰')
-SUM_KEYWORDS = ['합계','총계','합 계','총 계']
-
-def fill(c): return PatternFill('solid', fgColor=c)
-def fnt(color=None,bold=False,size=9): return Font(color=color if color else '000000', bold=bold, size=size)
-def aln(h='left',v='center',wrap=False): return Alignment(horizontal=h,vertical=v,wrap_text=wrap)
-
-# ── 2. 원본 구조 파싱 & 식별 계 ──────────────────────────────────────────────
-def clean_title(s):
-    nl=' \n'
-    return re.sub(r'\s+', ' ', s.replace('&amp;cr;', nl).replace('&cr;', nl).replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')).strip()
-
-def is_blank_title(s): return len(re.sub(r'[&;a-z]+','',s).strip())==0
-
-def parse_cell(m):
-    val=(re.sub(r'<[^>]+>', '', m.group(0)).replace('&amp;cr;','\n').replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&quot;','"').replace('&cr;','\n').strip())
-    cs = int(col_mat.group(1)) if (col_mat := re.search(r'COLSPAN=["\']?(\d+)["\']?', m.group(1), re.IGNORECASE)) else 1
-    tag = re.match(r'<([A-Z]+)', m.group(0), re.IGNORECASE).group(1).upper()
-    return dict(value=val, colspan=cs, tag=tag)
-
-def parse_xml(xml):
-    exts=re.findall(r'<EXTRACTION[^>]*ACODE="([^"]+)"[^>]*>([^<]+)</EXTRACTION>',xml)
-    tables=[]
-    for ti, tm in enumerate(re.finditer(r'<TABLE[^>]*>(?:(?!<TABLE).)*?</TABLE\s*>', xml, re.IGNORECASE | re.DOTALL)):
-        ctx=xml[max(0, tm.start()-600):tm.start()]
-        fin_label=next((lbl for kws,lbl in FIN_TABLE_MAP if any(kw in ctx or kw in tm.group(0) for kw in kws)),'')
-        ctx_titles=[clean_title(t) for t in re.findall(r'<(?:TITLE|P)[^>]*>([^<]{3,80})</(?:TITLE|P)>', ctx) if not is_blank_title(t)]
-        rows=[]
-        for tr in re.finditer(r'<TR[^>]*>(.*?)</TR\s*>', tm.group(0), re.IGNORECASE | re.DOTALL):
-            if cells :=[parse_cell(cm) for cm in re.finditer(r'<(?:TD|TH|TU|TE)([^>]*)>(.*?)</(?:TD|TH|TU|TE)\s*>', tr.group(1), re.IGNORECASE | re.DOTALL)]:
-                rows.append(cells)
-        tables.append(dict(idx=ti, fin_label=fin_label, ctx_title=ctx_titles[-1] if ctx_titles else '', rows=rows, start=tm.start()))
-    return exts, tables
-
-def is_num_or_decimal(val):
-    v = (str(val).strip().replace(',','').replace('(','').replace(')','').replace('%','').replace('-','').replace(' ','').split('\n')[0])
-    try: return float(v) or True
-    except: return False
-
-def _to_cell_value(v):
-    s = str(v).strip(); neg = s.startswith('(') and s.endswith(')')
-    if not s or s in ('-',''): return v
-    if len(p:=s.split(','))>=2 and all(pt.strip().isdigit() and 1<=len(pt.strip())<=2 for pt in p): return v
-    if not (cl:=s.replace(',','').replace('(','').replace(')','').replace(' ','')): return v
-    try: return -float(cl) if neg else float(cl)
-    except: return v
-
-# ── 3. 숫자 정규화 (Excel→DSD 복원용) ───────────────────────────────────────
-def is_note_ref(val):
-    """주석 번호 참조 여부 (예: '1, 2, 3' 같은 짧은 숫자 나열)"""
-    parts = val.strip().split(',')
-    return (len(parts) >= 2 and all(p.strip().isdigit() and 1 <= len(p.strip()) <= 2 for p in parts))
-
-def normalize_num(val):
-    """Excel 셀 값을 DSD XML에 삽입 가능한 문자열로 변환
-    - float('1234567.0') → '1,234,567'
-    - 음수 float('-1234.0') → '(1,234)'
-    - 텍스트는 그대로, HTML 특수문자 이스케이프
-    """
-    v = str(val).strip()
-    if not v or v in ('None', ''): return ''
-    if v == '-': return '-'
-    if '\n' in v: return '&amp;cr;'.join(normalize_num(l) for l in v.split('\n'))
-    if is_note_ref(v): return v
-    neg = v.startswith('-') or (v.startswith('(') and v.endswith(')'))
-    cl = v.replace(',','').replace('(','').replace(')','').replace('-','').replace(' ','')
-    try:
-        f = float(cl)
-        fmt = f"{int(f):,}" if f == int(f) else f"{f:,.2f}"
-        v = f"({fmt})" if neg else fmt
-    except (ValueError, TypeError):
-        pass
-    return v.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
-
-# ── 4. TD 정렬 보정 (밀린 행이 합계 TR 구조에 들어갈 때 CENTER→LEFT 방지) ──
-def _is_numeric_val(v):
-    cl = str(v).strip().replace(',','').replace('(','').replace(')','').replace('-','').replace(' ','')
-    if not cl: return False
-    try: float(cl); return True
-    except: return False
-
-def adjust_td_align(td_tag, value, is_header_row):
-    """헤더 행이 아닌데 텍스트 값이 CENTER 정렬 TD에 들어올 경우 LEFT로 교정."""
-    if is_header_row: return td_tag
-    if _is_numeric_val(value): return td_tag
-    return re.sub(r'\bALIGN="CENTER"', 'ALIGN="LEFT"', td_tag, flags=re.I)
-
-# ── 5. [핵심] 색상 기반 Excel 테이블 블럭 추출기 ─────────────────────────────
-def extract_excel_table_blocks(ws, EDIT_COLOR, HEADER_COLOR, SUM_COLOR):
-    """(오프셋 붕괴 방어선 1조)
-    색상 배경을 갖는 구역만 그룹핑! 테이블들이 동적으로 추가삭제 되더라도
-    배열 묶음 자체를 매핑하므로 이탈 안 됨!"""
-    blocks =[]
-    current_block =[]
-    empty_tides = 0
-    for ri, rw in enumerate(ws.iter_rows(min_row=1), start=1):
-        items_in_row =[]
-        is_hit = False
-        for ci, cell in enumerate(rw, start=1):
-            if getattr(cell.fill, 'fgColor', None) and type(cell.fill.fgColor.rgb) == str:
-                hc = cell.fill.fgColor.rgb.upper()
-                if hc.endswith(EDIT_COLOR) or hc.endswith(SUM_COLOR) or hc.endswith(HEADER_COLOR):
-                    items_in_row.append((ci, str(cell.value) if cell.value is not None else ''))
-                    is_hit = True
-        if is_hit:
-            current_block.append((ri, items_in_row))
-            empty_tides = 0
-        else:
-            empty_tides += 1
-            if empty_tides >= 1 and current_block:
-                blocks.append(current_block)
-                current_block =[]
-    if current_block: blocks.append(current_block)
-    return blocks
-
-# ── 6. [핵심 엔진] Excel → DSD 재조립기 ─────────────────────────────────────
-def excel_to_dsd_bytes(xlsx_bytes):
-    # ■ XLSX 바이너리 오염 및 보호 강제 차단용 사전 체크문
-    if not xlsx_bytes or not xlsx_bytes.startswith(b'PK'):
-        raise Exception("파일 구조 확인 실패 : '회사내 열람권한 보호 잠금 설정(마크애니 등등)'에 의해 엑셀 포맷을 읽을 수 없는 내부 파괴파일로 판단되었습니다. 정상(사내망 외 PC) 에서 잠김이 없는 형태로 저장바랍니다.")
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
-    if '_원본DSD_바이너리' not in wb.sheetnames:
-        raise Exception("엑셀 안 DSD 변환 소스코드가 제거된 단순 조작파일이 되었습니다. 초기 1. 엑셀 풀기 작업을 받은 작업 폼 문서(.xlsx)의 시트를 그대로 복제 보존 바랍니다.")
-    # 1. 기둥 XML 원천 부 추출
-    try:
-        ws_bin = wb['_원본DSD_바이너리']
-        cx_core = base64.b64decode("".join([str(ws_bin.cell(r, 1).value) for r in range(1, ws_bin.max_row+1) if ws_bin.cell(r,1).value]))
-        with zipfile.ZipFile(io.BytesIO(cx_core)) as zf:
-            z_archv = {n: zf.read(n) for n in zf.namelist()}
-        cx = z_archv['contents.xml'].decode('utf-8', errors='replace')
+                return {
+                    "place_id": place_id,
+                    "name": details_res.get("name"),
+                    "rating": details_res.get("rating"),
+                    "lat": details_res.get("geometry", {}).get("location", {}).get("lat"),
+                    "lng": details_res.get("geometry", {}).get("location", {}).get("lng"),
+                }
     except Exception as e:
-        raise Exception("시스템 이식 중 데이터 역순 복사 불량 : 양식 소실 엑셀!")
-    # 2. _원본XML 로 매핑 구성(절대 위치 무의미해진 상황. 이제 단순히 매치순서를 맞추는 보증 수표용)
-    m_info = {}  # { 시트이름 : [ xml에 있었던 t_idx1, t_idx2 .. ] }
-    if '_원본XML' in wb.sheetnames:
-        for rw in wb['_원본XML'].iter_rows(min_row=4, values_only=True):
-            if not rw or not rw[0] or str(rw[0])=='-': continue
-            try:
-                sn, ty = str(rw[0]).strip(), str(rw[5]).strip() if len(rw)>5 and rw[5] else 'TABLE'
-                if ty == 'TABLE': m_info.setdefault(sn, []).append(int(rw[1]))
-            except: pass
-
-    # XML 정규 파편 파싱 위치 확립부 (껍데기 살리고 안전 보호하는 부분)
-    table_positions = [(m.start(), m.end()) for m in re.finditer(r'<TABLE[^>]*>(?:(?!<TABLE).)*?</TABLE\s*>', cx, re.IGNORECASE | re.DOTALL)]
-    p_ins_block =[]
-    # 3. 데이터 결합 동적엔진(Dynamic Align Layered Loop) 가동
-    for s_idx, sn in enumerate(wb.sheetnames):
-        if sn in ('📋사용안내', '_원본XML', '_원본DSD_바이너리', '🤖AI검증결과'): continue
-        if not (mapped_tidx := m_info.get(sn)): continue # 해당 시트에 매칭할 테이블정보 리스트!
-        ws_curr = wb[sn]
-        t_chunks = extract_excel_table_blocks(ws_curr, EDIT_COLOR, HEADER_COLOR, SUM_COLOR)
-
-        for k_idx, target_xml_tbl_idx in enumerate(mapped_tidx):
-            if target_xml_tbl_idx >= len(table_positions): continue
-            if k_idx >= len(t_chunks): break  # 혹시 테이블 통채로 유저가 날렸다면 스킵.
-            # 해당 조각 구역의 2D 데이터 매핑 준비
-            curr_xcl_block = t_chunks[k_idx]
-            b_data_map = {}
-            for loc_tr_idx, (real_exl_ri, lst_val_by_cols) in enumerate(curr_xcl_block):
-                for e_ci, t_val in lst_val_by_cols:
-                    b_data_map[(loc_tr_idx, e_ci - 1)] = t_val   # xcol 보정(0_idx 화)
-            ts, te = table_positions[target_xml_tbl_idx]; tbl_cx_src = cx[ts:te]
-            trs = list(re.finditer(r'(<TR[^>]*>)(.*?)(</TR\s*>)', tbl_cx_src, re.IGNORECASE | re.DOTALL))
-            if not trs: continue
-            c_parts, p_tail =[], 0
-            n_tgt_row_num = max(len(trs), len(curr_xcl_block))
-            # 클론 행 템플릿: trs[-1](합계 행)이 아닌 일반 데이터 행(두 번째 TR) 사용 → CENTER 정렬 오염 방지
-            clone_tpl = trs[min(1, len(trs)-1)]
-            # [마이크로 TR 리턴 치환 공정시작!] -- 행밀림 에러/가운데 정렬깨짐, XML 태그 닫기 파편증상 ALL DELETE --
-            for n_ti in range(n_tgt_row_num):
-                cloned = (n_ti >= len(trs))
-                hit_rm = clone_tpl if cloned else trs[n_ti]
-                if not cloned: c_parts.append(tbl_cx_src[p_tail:hit_rm.start()])
-
-                openTag, midVal, closeTag = hit_rm.group(1), hit_rm.group(2), hit_rm.group(3)
-                col_offset_head = 0
-                v_body =[]
-                c_td_last = 0
-
-                for inner_TD_m in re.finditer(r'(<(?:TD|TH|TU|TE)[^>]*>)(.*?)(</(?:TD|TH|TU|TE)\s*>)', midVal, re.IGNORECASE | re.DOTALL):
-                    v_body.append(midVal[c_td_last : inner_TD_m.start()])
-                    TD_o, content_chk, TD_c = inner_TD_m.group(1), inner_TD_m.group(2), inner_TD_m.group(3)
-
-                    cSP = int(cf_.group(1)) if (cf_:=re.search(r'COLSPAN=["\']?(\d+)["\']?', TD_o, re.I)) else 1
-                    lookup_pt = (n_ti, col_offset_head)
-
-                    wrap_g = re.match(r'^(\s*<(?:P|SPAN|DIV|FONT|TITLE)[^>]*>)(.*?)(</(?:P|SPAN|DIV|FONT|TITLE)>\s*)$', content_chk, re.IGNORECASE | re.DOTALL)
-
-                    if lookup_pt in b_data_map: # 값 유입. 삽입 (더욱 간소화 정제하여 HTML 결합에 의한 치환사고 없게 함)
-                        clean_target_text = b_data_map[lookup_pt]
-                        cT = normalize_num(clean_target_text)
-                        sIn = f"{wrap_g.group(1)}{cT}{wrap_g.group(3)}" if wrap_g else cT
-                        # 밀린 행이 합계 TR 구조에 들어올 때 CENTER 정렬 교정 (헤더 행 n_ti=0 제외)
-                        fixed_TD_o = adjust_td_align(TD_o, clean_target_text, n_ti == 0)
-                        v_body.append(fixed_TD_o + sIn + TD_c)
-                    else:
-                        if cloned:
-                            cE = f"{wrap_g.group(1)}&amp;nbsp;{wrap_g.group(3)}" if wrap_g else "&amp;nbsp;"
-                            v_body.append(TD_o + cE + TD_c)
-                        else:
-                            v_body.append(inner_TD_m.group(0))
-                    c_td_last = inner_TD_m.end(); col_offset_head += cSP
-
-                v_body.append(midVal[c_td_last:])
-                c_parts.append(openTag + "".join(v_body) + closeTag)
-                if not cloned: p_tail = hit_rm.end()
-            # TBODY, THEAD 최외곽 XML구조가 끝맺도록 결합! (가운데정렬 파쇄나 에디터 인식 불가 회피완성됨)
-            c_parts.append(tbl_cx_src[p_tail:])
-            p_ins_block.append((ts, te, "".join(c_parts)))
-
-    # 전체 오프셋 인덱스를 어그러뜨리지 않기위하여 맨 끝 테이블서부터 적용 (1차, DART 역호환 원칙 채용)
-    rslt_cx = cx
-    for bs, be, htmls in sorted(p_ins_block, key=lambda i:-i[0]): rslt_cx = rslt_cx[:bs] + htmls + rslt_cx[be:]
-
-    buff = io.BytesIO()
-    with zipfile.ZipFile(buff, 'w', zipfile.ZIP_DEFLATED) as zh:
-        for oriN, dBit in z_archv.items():
-            if oriN.endswith(('.png','.jpeg','.jpg','.gif')): continue
-            zh.writestr(oriN, rslt_cx.encode('utf-8') if oriN=='contents.xml' else dBit)
-    return buff.getvalue()
-
-# ── 7. [핵심 엔진] DSD → Excel 빌더 ─────────────────────────────────────────
-def dsd_to_excel_bytes(dsd_bytes, do_period_change=False, period_params=None):
-    with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-        xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-    exts, tables = parse_xml(xml)
-
-    wb = openpyxl.Workbook(); ws0 = wb.active; ws0.title = '📋사용안내'; ws0.sheet_view.showGridLines=False
-    for ri,(tx,bl,fg,bg,sz) in enumerate([
-        ('✅ DART 문서 완벽 템플릿(결속방어형 탑재 시스템)',1,'1F4E79','FFFFFF',13),('',0,'000000','FFFFFF',8),
-        ('[주의 1]: 가장 큰 문제는 행 자체를 날려 빈 줄 처리 후 아래 테이블들의 포맷(결속)이 손상된 탓 입니다!', 1,'FFFFFF','B71C1C',10),
-        ('[필독!!] 셀을 줄째로 [삭제]하거나 빈줄[삽입]하면 인식이 고착됩니다! 줄째 카피 하여[복사된 셀 삽입], 혹은 [해당값 비우기 및 - 긋기]만 유지하세요!!', 1,'FFFFFF','E65100',11),
-    ], 1):
-        c=ws0.cell(ri, 1, tx); c.font=fnt(color=fg, bold=bl, size=sz)
-        ws0.column_dimensions['A'].width=100
-        if bg and bg != 'FFFFFF': c.fill=fill(bg)
-    map_data =[]
-    ftbs = [t for t in tables if t.get('fin_label')]
-    for title, tbl, mx in ([(x['fin_label'], [x], False) for x in ftbs]):
-        bn=re.sub(r'[\\/*?:\[\]]', '', title).strip(); sname=bn[:31]; ws=wb.create_sheet(sname)
-        map_data.append((ws.title, tbl[0]['idx'], 0, 'TABLE', 1, 'TABLE'))
-        erow=1; erow_start=1  # head 판단은 시작행 기준 고정값 사용 (rx==erow라 항상True되던 버그 수정)
-        for rx, rw in enumerate(tbl[0]['rows'], erow):
-            head, sm, cid = (rx < erow_start+2), any(kw in "".join([z['value'] for z in rw if isinstance(z,dict)]).replace(' ','') for kw in SUM_KEYWORDS), 1
-            for cn in rw:
-                if not isinstance(cn, dict): continue
-                tc = ws.cell(erow, cid, _to_cell_value(cn['value']))
-                if head: tc.fill, tc.alignment, tc.font = fill(HEADER_COLOR), aln('center','center',True), fnt(bold=True)
-                else: tc.fill = fill(SUM_COLOR) if sm else fill(EDIT_COLOR)
-                if is_num_or_decimal(cn['value']) and not head: tc.number_format, tc.alignment = FMT_ACCOUNT if '.' not in cn['value'] else FMT_DECIMAL, aln('right','center')
-                cid += cn.get('colspan', 1)
-            erow+=1
-
-    b_rest =[r for r in tables if not r.get('fin_label')]
-    cst=1
-    for rest in b_rest:
-        bx = (rest.get('ctx_title','').replace('/','').replace('[','')[:10])
-        sn = f"📝_{bx}_{cst}"[:31]; cst+=1; ws = wb.create_sheet(sn); er=1; er_start=1
-        map_data.append((ws.title, rest['idx'], 0, 'TABLE', er, 'TABLE'))
-        for rI, rt in enumerate(rest['rows'], er):
-            HD, sUM, d_id = (rI < er_start+2), any(h in "".join([y['value'] for y in rt if type(y)==dict]).replace(' ','') for h in SUM_KEYWORDS), 1
-            for CI in rt:
-                if not isinstance(CI,dict): continue
-                bc = ws.cell(er, d_id, _to_cell_value(CI['value']))
-                if HD: bc.fill, bc.font, bc.alignment = fill(HEADER_COLOR), fnt(bold=True), aln('center','center',True)
-                else: bc.fill = fill(SUM_COLOR) if sUM else fill(EDIT_COLOR)
-                if is_num_or_decimal(CI['value']) and not HD: bc.number_format, bc.alignment = FMT_ACCOUNT if '.' not in CI['value'] else FMT_DECIMAL, aln('right','center')
-                d_id += CI.get('colspan',1)
-            er+=1
-    wm = wb.create_sheet('_원본XML'); wm.sheet_state='hidden'; wm.append(['SN','is','ie','DT','er','rt']); wm.append(['-']*6); wm.append(['-']*6); wm.append(['-']*6)
-    for dm in map_data: wm.append(list(dm))
-    wB = wb.create_sheet('_원본DSD_바이너리'); wB.sheet_state='hidden'
-    bfB = base64.b64encode(dsd_bytes).decode('utf-8')
-    for rx, ci in enumerate(range(0, len(bfB), 30000), 1): wB.cell(rx, 1, bfB[ci:ci+30000])
-    buf = io.BytesIO(); wb.save(buf); xlsx_out = buf.getvalue()
-
-    # ── 롤오버 후처리: do_period_change=True 시 당기→전기 이관 적용 ──────────
-    if do_period_change:
-        xlsx_out = apply_rollover(xlsx_out, period_params or {})
-
-    return xlsx_out
-
-# ── 8. 롤오버 후처리 엔진 ─────────────────────────────────────────────────────
-def apply_rollover(xlsx_bytes, params):
-    """당기 숫자를 전기 칸으로 밀고 헤더의 기수/연도를 자동 변경.
-    - HEADER_COLOR 행에서 당기/전기 컬럼 위치 파악
-    - 당기 값 → 전기 슬롯으로 복사, 당기 슬롯은 비움
-    - 기수 문자열 자동 증가 (제 N 기 → 제 N+1 기)
-    - 연도 문자열 자동 증가 (params['year_offset'] 만큼)
-    """
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
-
-    for sn in wb.sheetnames:
-        # 시스템 시트 스킵
-        if sn in ('📋사용안내', '_원본XML', '_원본DSD_바이너리', '🤖AI검증결과'):
-            continue
-        ws = wb[sn]
-
-        # 헤더 행에서 당기/전기 컬럼 위치 파악
-        # { 헤더행번호: {'당기': [col_list], '전기': [col_list]} }
-        header_col_map = {}
-        for ri, row in enumerate(ws.iter_rows(), start=1):
-            for ci, cell in enumerate(row, start=1):
-                if not (getattr(cell.fill, 'fgColor', None) and
-                        type(cell.fill.fgColor.rgb) == str and
-                        cell.fill.fgColor.rgb.upper().endswith(HEADER_COLOR)):
-                    continue
-                val = str(cell.value or '').strip()
-                if re.search(r'당\s*기', val):
-                    header_col_map.setdefault(ri, {'당기': [], '전기': []})['당기'].append(ci)
-                elif re.search(r'전\s*기', val):
-                    header_col_map.setdefault(ri, {'당기': [], '전기': []})['전기'].append(ci)
-
-        if not header_col_map:
-            continue
-
-        # 첫 번째 헤더 행 기준으로 당기/전기 컬럼 결정
-        for h_row, col_info in sorted(header_col_map.items()):
-            dk_cols = col_info.get('당기', [])
-            jk_cols = col_info.get('전기', [])
-            if not dk_cols or not jk_cols:
-                continue
-
-            # 데이터 행: 헤더 다음 행부터 끝까지
-            for data_ri in range(h_row + 1, ws.max_row + 1):
-                for pair_idx, dk_col in enumerate(dk_cols):
-                    if pair_idx < len(jk_cols):
-                        jk_col = jk_cols[pair_idx]
-                        dk_cell = ws.cell(data_ri, dk_col)
-                        jk_cell = ws.cell(data_ri, jk_col)
-                        # 당기 값을 전기로 복사
-                        if dk_cell.value is not None:
-                            jk_cell.value = dk_cell.value
-                            jk_cell.number_format = dk_cell.number_format
-                            jk_cell.alignment = dk_cell.alignment
-                        # 당기 셀 비우기
-                        dk_cell.value = None
-
-            # 헤더 기수/날짜 자동 갱신
-            _update_period_headers(ws, h_row, params)
-            break  # 시트당 첫 번째 헤더 세트만 처리
-
-    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
-
-def _update_period_headers(ws, h_row, params):
-    """헤더 행의 기수(제 N 기) 및 연도 문자열을 자동 증가 변환."""
-    year_offset = int(params.get('year_offset', 1))
-    for ci in range(1, ws.max_column + 1):
-        cell = ws.cell(h_row, ci)
-        val = str(cell.value or '')
-        if not val.strip():
-            continue
-        # 기수 패턴: '제 N 기' 또는 '제N기' → N+1로 증가
-        def increment_period(m):
-            n = int(m.group(1))
-            return m.group(0).replace(str(n), str(n + 1), 1)
-        new_val = re.sub(r'제\s*(\d+)\s*기', increment_period, val)
-        # 연도 4자리 패턴 자동 증가
-        if year_offset != 0:
-            new_val = re.sub(r'(\d{4})', lambda m: str(int(m.group(1)) + year_offset), new_val)
-        if new_val != val:
-            cell.value = new_val
-
-# ── 9. AI 검증용 Excel 분석기 ─────────────────────────────────────────────
-def _safe_float(v):
-    """문자/숫자/괄호 음수 형태를 안전하게 float로 변환."""
-    if v is None:
-        return None
-    s = str(v).strip()
-    if not s or s in ('-', 'None', 'nan'):
-        return None
-    neg = s.startswith('(') and s.endswith(')')
-    s = s.replace(',', '').replace('(', '').replace(')', '').replace('%', '').replace(' ', '')
-    try:
-        n = float(s)
-        return -n if neg else n
-    except Exception:
-        return None
-
-def _iter_visible_sheets(wb):
-    """사용자 편집 대상 시트만 순회."""
-    for sn in wb.sheetnames:
-        if sn in ('📋사용안내', '_원본XML', '_원본DSD_바이너리', '🤖AI검증결과'):
-            continue
-        ws = wb[sn]
-        if getattr(ws, 'sheet_state', 'visible') != 'visible':
-            continue
-        yield ws
-
-def _sheet_rows_as_matrix(ws):
-    """시트의 비어있지 않은 행만 2차원 배열로 수집."""
-    rows = []
-    for ri in range(1, ws.max_row + 1):
-        vals = [ws.cell(ri, ci).value for ci in range(1, ws.max_column + 1)]
-        if any(v not in (None, '') for v in vals):
-            rows.append(vals)
-    return rows
-
-def _find_balance_numbers(rows):
-    """재무상태표에서 자산/부채/자본 총계 후보를 탐지."""
-    assets = liabilities = equity = None
-    for row in rows:
-        texts = [str(v).strip() for v in row if v not in (None, '')]
-        if not texts:
-            continue
-        first = texts[0].replace(' ', '')
-        nums = [_safe_float(v) for v in row]
-        num_vals = [n for n in nums if n is not None]
-        if not num_vals:
-            continue
-        last_num = num_vals[-1]
-        if any(k in first for k in ['자산총계', '자산계', '자산총합']):
-            assets = last_num
-        elif any(k in first for k in ['부채총계', '부채계', '부채총합']):
-            liabilities = last_num
-        elif any(k in first for k in ['자본총계', '자본계', '자본총합']):
-            equity = last_num
-    return assets, liabilities, equity
-
-def _collect_numeric_profile(ws):
-    """시트 전체 숫자 분포와 단위 이상치 후보를 탐지."""
-    nums = []
-    suspicious = []
-    for ri in range(1, ws.max_row + 1):
-        for ci in range(1, ws.max_column + 1):
-            cell = ws.cell(ri, ci)
-            n = _safe_float(cell.value)
-            if n is None:
-                continue
-            nums.append(abs(n))
-            if abs(n) != 0:
-                digits = len(str(int(abs(n)))) if abs(n) >= 1 else 0
-                suspicious.append({'row': ri, 'col': ci, 'value': str(cell.value), 'digits': digits})
-    return nums, suspicious
-
-def analyze_excel_financials(xlsx_bytes):
-    """업로드된 Excel을 Python으로 정적 검증.
-    - 대차평균
-    - 합계/총계 라인 존재 여부
-    - 숫자 자릿수 분포 기반 단위 이상 여부
-    """
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=True)
-    result = {
-        'summary': {'sheet_count': 0, 'numeric_cell_count': 0, 'warning_count': 0, 'error_count': 0},
-        'balance_checks': [],
-        'unit_anomalies': [],
-        'sum_row_checks': [],
-        'sheets': []
-    }
-
-    for ws in _iter_visible_sheets(wb):
-        rows = _sheet_rows_as_matrix(ws)
-        nums, suspicious = _collect_numeric_profile(ws)
-        result['summary']['sheet_count'] += 1
-        result['summary']['numeric_cell_count'] += len(nums)
-
-        sheet_report = {'sheet': ws.title, 'numeric_count': len(nums), 'sum_keywords_found': 0, 'warnings': []}
-
-        # 1) 대차평균 검사
-        assets, liabilities, equity = _find_balance_numbers(rows)
-        if assets is not None and liabilities is not None and equity is not None:
-            diff = assets - (liabilities + equity)
-            ok = abs(diff) < 1
-            result['balance_checks'].append({
-                'sheet': ws.title,
-                'assets': assets,
-                'liabilities': liabilities,
-                'equity': equity,
-                'difference': diff,
-                'status': 'OK' if ok else 'ERROR'
-            })
-            if ok:
-                sheet_report['warnings'].append('자산총계 = 부채총계 + 자본총계 일치')
-            else:
-                sheet_report['warnings'].append(f'대차 불일치 감지: 차이 {diff:,.0f}')
-                result['summary']['error_count'] += 1
-
-        # 2) 합계/총계 라인 존재 여부
-        for row in rows:
-            first = str(row[0]).strip().replace(' ', '') if row and row[0] not in (None, '') else ''
-            if any(k.replace(' ', '') in first for k in SUM_KEYWORDS):
-                sheet_report['sum_keywords_found'] += 1
-        result['sum_row_checks'].append({
-            'sheet': ws.title,
-            'sum_rows_found': sheet_report['sum_keywords_found'],
-            'status': 'OK' if sheet_report['sum_keywords_found'] > 0 else 'WARN'
-        })
-        if sheet_report['sum_keywords_found'] == 0:
-            sheet_report['warnings'].append('합계/총계 행이 탐지되지 않았습니다.')
-            result['summary']['warning_count'] += 1
-
-        # 3) 숫자 자릿수 편차 기반 단위 이상치
-        if nums:
-            positive = [n for n in nums if n > 0]
-            if positive:
-                digit_lengths = [len(str(int(n))) if n >= 1 else 0 for n in positive]
-                max_digits = max(digit_lengths)
-                min_digits = min(digit_lengths)
-                if max_digits - min_digits >= 4:
-                    top_suspicious = sorted(
-                        [x for x in suspicious if x['digits'] in (max_digits, min_digits)],
-                        key=lambda x: (-x['digits'], x['row'], x['col'])
-                    )[:8]
-                    result['unit_anomalies'].append({
-                        'sheet': ws.title,
-                        'digit_span': max_digits - min_digits,
-                        'examples': top_suspicious,
-                        'status': 'WARN'
-                    })
-                    sheet_report['warnings'].append(
-                        f'숫자 자릿수 편차가 큽니다. 단위 혼입 가능성 확인 필요 (최소 {min_digits}자리 / 최대 {max_digits}자리)'
-                    )
-                    result['summary']['warning_count'] += 1
-
-        result['sheets'].append(sheet_report)
-
-    return result
-
-def build_ai_prompt_from_excel_summary(summary):
-    """Python 검증 결과를 AI에 넘길 프롬프트로 직렬화."""
-    return f"""다음은 EasyDSD가 업로드된 Excel 재무제표를 Python으로 1차 검증한 결과입니다.
-이 결과를 바탕으로 한국어로 재무제표 검증 의견을 작성하세요.
-
-검토 지시:
-1. 대차평균(자산총계 = 부채총계 + 자본총계) 결과를 검토
-2. 합계/총계 행 탐지 결과를 검토
-3. 숫자 자릿수 편차를 바탕으로 단위 이상 가능성을 판단
-4. 사용자가 다시 확인해야 할 항목을 우선순위로 정리
-5. 결과를 [✅통과 / ⚠️주의 / ❌오류] 형식으로 설명
-
-Python 검증 JSON:
-{json.dumps(summary, ensure_ascii=False, indent=2)}
-"""
-
-def run_ai_validation(summary, provider, api_key, model):
-    """Gemini 또는 Claude를 호출하여 Python 검증 결과를 사람이 읽기 쉬운 보고서로 재서술."""
-    if not api_key:
-        return 'API Key가 없어 Python 검증만 수행했습니다.'
-    prompt = build_ai_prompt_from_excel_summary(summary)
-    provider = (provider or 'gemini').strip().lower()
-
-    if provider == 'gemini':
-        if not GENAI_AVAILABLE:
-            raise Exception('google-generativeai 패키지가 없어 Gemini를 호출할 수 없습니다.')
-        genai.configure(api_key=api_key)
-        model_name = model or 'gemini-1.5-flash'
-        resp = genai.GenerativeModel(model_name).generate_content(prompt)
-        return getattr(resp, 'text', str(resp))
-
-    if provider in ('anthropic', 'claude'):
-        if not ANTHROPIC_AVAILABLE:
-            raise Exception('anthropic 패키지가 없어 Claude를 호출할 수 없습니다.')
-        model_name = model or 'claude-3-5-sonnet-latest'
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model_name,
-            max_tokens=1800,
-            messages=[{'role': 'user', 'content': prompt}]
-        )
-        parts = []
-        for block in getattr(resp, 'content', []):
-            txt = getattr(block, 'text', None)
-            if txt:
-                parts.append(txt)
-        return '\n'.join(parts).strip() or str(resp)
-
-    raise Exception('지원하지 않는 AI 제공자입니다. gemini 또는 anthropic를 사용하세요.')
-
-# ── 10. DSD에서 재무 텍스트 추출 (보조 도구) ─────────────────────────────────
-def extract_financial_text_from_dsd(dsd_bytes):
-    """DSD 파일에서 재무제표 테이블 텍스트를 추출."""
-    with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-        xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-    _, tables = parse_xml(xml)
-    lines = []
-    for tbl in tables:
-        if not tbl.get('fin_label'):
-            continue
-        lines.append(f"\n=== {tbl['fin_label']} ===")
-        for row in tbl['rows']:
-            row_texts = [cell['value'] for cell in row if isinstance(cell, dict)]
-            lines.append(' | '.join(row_texts))
-    return '\n'.join(lines)
-
-# ── 11. 전기금액 검증 (두 DSD 비교) ─────────────────────────────────────────
-def verify_prior_period(prev_dsd_bytes, curr_dsd_bytes):
-    """전년도 DSD의 당기 금액 vs 당해연도 DSD의 전기 금액 비교.
-    롤오버 후 이관이 정확한지 항목별로 검증."""
-    def extract_period_values(dsd_bytes, col_keyword):
-        """특정 기간(당기/전기) 컬럼의 항목명:금액 딕셔너리 반환."""
-        with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-            xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-        _, tables = parse_xml(xml)
-        result = {}  # { 재무제표라벨: { 항목명: 금액 } }
-        for tbl in tables:
-            if not tbl.get('fin_label'):
-                continue
-            label = tbl['fin_label']
-            rows = tbl['rows']
-            if not rows:
-                continue
-            # 헤더 행에서 대상 컬럼 위치 파악 (colspan 누적으로 실제 열 인덱스 계산)
-            header_row = rows[0]
-            target_cols = []
-            col_cursor = 0
-            for cell in header_row:
-                if isinstance(cell, dict):
-                    if re.search(col_keyword, cell['value']):
-                        target_cols.append(col_cursor)
-                    col_cursor += cell.get('colspan', 1)
-            if not target_cols:
-                continue
-            # 데이터 행에서 항목명과 금액 추출
-            tbl_data = {}
-            for row in rows[1:]:
-                if not row:
-                    continue
-                item_name = row[0]['value'].strip() if isinstance(row[0], dict) else ''
-                if not item_name or item_name in ['-', '']:
-                    continue
-                col_cursor2 = 0
-                for cell in row:
-                    if not isinstance(cell, dict):
-                        continue
-                    if col_cursor2 in target_cols:
-                        val = cell['value'].strip()
-                        if val and val not in ['-', '']:
-                            tbl_data[item_name] = val
-                            break
-                    col_cursor2 += cell.get('colspan', 1)
-            if tbl_data:
-                result[label] = tbl_data
-        return result
-
-    prev_current = extract_period_values(prev_dsd_bytes, r'당\s*기')  # 전년도 당기
-    curr_prior   = extract_period_values(curr_dsd_bytes,  r'전\s*기')  # 당해연도 전기
-
-    total_ok = total_mismatch = total_missing = 0
-    report = []
-    all_labels = set(list(prev_current.keys()) + list(curr_prior.keys()))
-
-    for label in sorted(all_labels):
-        prev_data = prev_current.get(label, {})
-        curr_data = curr_prior.get(label, {})
-        all_items = set(list(prev_data.keys()) + list(curr_data.keys()))
-        table_rows = []
-        for item in sorted(all_items):
-            pv = prev_data.get(item, '(없음)')
-            cv = curr_data.get(item, '(없음)')
-            # 숫자 정규화 후 비교
-            def _norm(v):
-                v = str(v).strip().replace(',','').replace('(', '-').replace(')','')
-                try: return float(v)
-                except: return v
-            if pv == '(없음)' or cv == '(없음)':
-                status = '⚠️누락'; total_missing += 1
-            elif _norm(pv) == _norm(cv):
-                status = '✅일치'; total_ok += 1
-            else:
-                status = '❌불일치'; total_mismatch += 1
-            table_rows.append({'item': item, 'prev_val': pv, 'curr_val': cv, 'status': status})
-        report.append({'label': label, 'rows': table_rows})
-
-    return {
-        'summary': {'ok': total_ok, 'mismatch': total_mismatch, 'missing': total_missing},
-        'tables': report
-    }
-
-# ── 12. DSD Diff 비교 분석 ────────────────────────────────────────────────────
-def compare_dsd_files(before_dsd_bytes, after_dsd_bytes):
-    """수정 전/후 DSD의 XML 노드를 전수 비교하여 변동된 셀만 추출.
-    테이블 인덱스, 행/열 인덱스, 변경 전/후 값을 반환."""
-    def get_all_cells(dsd_bytes):
-        with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-            xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-        _, tables = parse_xml(xml)
-        cells = {}  # { (table_idx, label, row_idx, col_idx): value }
-        for tbl in tables:
-            t_idx = tbl['idx']
-            label = tbl.get('fin_label') or tbl.get('ctx_title', f'테이블{t_idx}')
-            for ri, row in enumerate(tbl['rows']):
-                col_cursor = 0
-                for cell in row:
-                    if isinstance(cell, dict):
-                        cells[(t_idx, label, ri, col_cursor)] = cell['value']
-                        col_cursor += cell.get('colspan', 1)
-        return cells
-
-    before_cells = get_all_cells(before_dsd_bytes)
-    after_cells  = get_all_cells(after_dsd_bytes)
-    all_keys = set(list(before_cells.keys()) + list(after_cells.keys()))
-
-    diffs = []; added = []; removed = []
-    for key in sorted(all_keys, key=lambda k: (k[0], k[2], k[3])):
-        t_idx, label, ri, ci = key
-        bval = before_cells.get(key)
-        aval = after_cells.get(key)
-        if bval is None and aval is not None:
-            added.append({'table': label, 't_idx': t_idx, 'row': ri, 'col': ci, 'after': aval})
-        elif bval is not None and aval is None:
-            removed.append({'table': label, 't_idx': t_idx, 'row': ri, 'col': ci, 'before': bval})
-        elif bval != aval:
-            diffs.append({'table': label, 't_idx': t_idx, 'row': ri, 'col': ci, 'before': bval, 'after': aval})
-
-    return {
-        'changed': diffs, 'added': added, 'removed': removed,
-        'summary': {'changed_count': len(diffs), 'added_count': len(added), 'removed_count': len(removed)}
-    }
-
-
-# ── 13. 추가 후처리/점검/정리 기능 ───────────────────────────────────────────
-from copy import copy
-from datetime import datetime
-
-def friendly_error_message(exc, stage='작업'):
-    """사용자에게 보여줄 친화적 오류 문구."""
-    msg = str(exc) or exc.__class__.__name__
-    raw = msg.lower()
-    if 'styleproxy' in raw:
-        return f'{stage} 중 엑셀 스타일 처리 단계에서 오류가 발생했습니다. 핵심 변환 엔진이 아니라 후처리 단계 문제입니다. 옵션을 줄여 다시 시도해 주세요.'
-    if 'xlsx file format cannot be determined' in raw or 'zip' in raw:
-        return f'{stage}할 파일 형식을 읽지 못했습니다. 실제 .xlsx / .dsd 파일인지 확인해 주세요.'
-    if '_원본dsd_바이너리' in msg or '_원본xml' in msg:
-        return f'{stage}에 필요한 숨김 시트가 손상되었거나 삭제되었습니다. EasyDSD가 생성한 원본 작업양식을 사용해 주세요.'
-    if 'permission' in raw:
-        return f'{stage} 중 파일 접근 권한 문제로 실패했습니다. 파일을 닫고 다시 시도해 주세요.'
-    if 'api key' in raw:
-        return msg
-    return f'{stage} 중 오류가 발생했습니다: {msg}'
-
-def _copy_cell_style(src, dst):
-    """StyleProxy 오류를 피하기 위해 속성을 안전 복사."""
-    if src.has_style:
-        dst.font = copy(src.font)
-        dst.fill = copy(src.fill)
-        dst.border = copy(src.border)
-        dst.alignment = copy(src.alignment)
-        dst.protection = copy(src.protection)
-        dst.number_format = src.number_format
-
-def _read_original_dsd_bytes_from_wb(wb):
-    if '_원본DSD_바이너리' not in wb.sheetnames:
-        return None
-    ws = wb['_원본DSD_바이너리']
-    buf = []
-    for r in range(1, ws.max_row + 1):
-        v = ws.cell(r, 1).value
-        if v:
-            buf.append(str(v))
-    if not buf:
-        return None
-    return base64.b64decode(''.join(buf))
-
-def detect_note_anchor_conflicts(tables):
-    """주석 번호 충돌/중복/누락 간단 탐지."""
-    anchors = []
-    seen = {}
-    duplicates = []
-    missing_gaps = []
-    PATS = [
-        r'^주석\s*(\d{1,2})\s*[.\-·]\s*(.{2,30})',
-        r'^(\d{1,2})\s*\.\s*([^\d\(].{1,30})',
-        r'^\((\d{1,2})\)\s*([^\d].{1,30})',
-    ]
-    for tbl in tables:
-        ctx = (tbl.get('ctx_title') or '').strip()
-        if not ctx:
-            continue
-        for pat in PATS:
-            m = re.match(pat, ctx)
-            if m:
-                n = int(m.group(1))
-                title = clean_title(m.group(2))[:20]
-                anchors.append({'note_num': n, 'title': title, 'table_idx': tbl['idx']})
-                if n in seen:
-                    duplicates.append({'note_num': n, 'first_title': seen[n], 'dup_title': title, 'table_idx': tbl['idx']})
-                else:
-                    seen[n] = title
-                break
-    nums = sorted({a['note_num'] for a in anchors})
-    if nums:
-        for i in range(nums[0], nums[-1]):
-            if i not in nums:
-                missing_gaps.append(i)
-    return {'anchors': anchors, 'duplicates': duplicates, 'missing_numbers': missing_gaps}
-
-def precheck_dsd_bytes(dsd_bytes):
-    with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-        xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-    exts, tables = parse_xml(xml)
-    fin = [t for t in tables if t.get('fin_label')]
-    notes = [t for t in tables if not t.get('fin_label')]
-    conflict = detect_note_anchor_conflicts(tables)
-    warnings = []
-    if not fin:
-        warnings.append('재무제표 TABLE을 찾지 못했습니다.')
-    if conflict['duplicates']:
-        warnings.append(f'주석 번호 중복 의심 {len(conflict["duplicates"])}건')
-    if conflict['missing_numbers']:
-        warnings.append(f'주석 번호 공백 의심: {conflict["missing_numbers"][:10]}')
-    return {
-        'table_count': len(tables),
-        'financial_table_count': len(fin),
-        'note_table_count': len(notes),
-        'extraction_count': len(exts),
-        'note_conflicts': conflict,
-        'warnings': warnings,
-    }
-
-def precheck_excel_bytes(xlsx_bytes):
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=False)
-    issues = []
-    repairable = []
-    fatal = []
-    hidden_ok = True
-    for req in ('_원본XML', '_원본DSD_바이너리'):
-        if req not in wb.sheetnames:
-            fatal.append(f'필수 숨김 시트 누락: {req}')
-            hidden_ok = False
-        elif wb[req].sheet_state != 'hidden':
-            issues.append(f'{req} 시트가 숨김 해제되어 있습니다.')
-            repairable.append(f'{req} 시트를 다시 hidden 처리할 수 있습니다.')
-
-    visible_targets = [sn for sn in wb.sheetnames if sn not in ('📋사용안내','_원본XML','_원본DSD_바이너리','🤖AI검증결과')]
-    if not visible_targets:
-        fatal.append('편집 대상 시트가 없습니다.')
-
-    if '_원본XML' in wb.sheetnames:
-        ws = wb['_원본XML']
-        mapped = []
-        for row in ws.iter_rows(min_row=5, values_only=True):
-            if not row or not row[0] or row[0] == '-':
-                continue
-            mapped.append(str(row[0]).strip())
-        missing = sorted(set(mapped) - set(wb.sheetnames))
-        if missing:
-            fatal.append(f'_원본XML 매핑에 있으나 실제 워크북에 없는 시트: {missing[:8]}')
-    merged_cnt = sum(len(wb[sn].merged_cells.ranges) for sn in visible_targets if sn in wb.sheetnames)
-    if merged_cnt:
-        issues.append(f'병합셀 {merged_cnt}개가 존재합니다. 일부 수동 편집에서 주의가 필요합니다.')
-
-    return {
-        'ok': not fatal,
-        'issues': issues,
-        'repairable': repairable,
-        'fatal': fatal,
-        'sheet_count': len(visible_targets),
-    }
-
-def repair_excel_bytes_for_upload(xlsx_bytes):
-    """보수적 복구만 수행. 핵심 구조를 추정 복원하지는 않음."""
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=False)
-    actions = []
-    for req in ('_원본XML', '_원본DSD_바이너리'):
-        if req in wb.sheetnames and wb[req].sheet_state != 'hidden':
-            wb[req].sheet_state = 'hidden'
-            actions.append(f'{req} 시트를 hidden 처리')
-    # 사용안내 시트가 첫 장이 아니면 앞으로 이동
-    if '📋사용안내' in wb.sheetnames and wb.sheetnames[0] != '📋사용안내':
-        ws = wb['📋사용안내']
-        wb._sheets.remove(ws)
-        wb._sheets.insert(0, ws)
-        actions.append('📋사용안내 시트를 맨 앞으로 이동')
-    buf = io.BytesIO(); wb.save(buf)
-    return buf.getvalue(), actions
-
-def is_note_ref(val):
-    parts = str(val).strip().split(',')
-    return (len(parts) >= 2 and all(p.strip().isdigit() and 1 <= len(p.strip()) <= 2 for p in parts))
-
-def _is_edit_cell(cell):
-    f = cell.fill
-    if f and f.fill_type == 'solid':
-        fg = f.fgColor
-        if fg and fg.type == 'rgb' and isinstance(fg.rgb, str):
-            return fg.rgb.upper().endswith(EDIT_COLOR.upper())
-    return False
-
-def _rollover_sheet_safe(ws, fill_000=True):
-    """dart_gui의 열기반 롤오버 아이디어를 보수적으로 이식."""
-    for rowi in range(1, ws.max_row + 1):
-        amt_cells = []
-        for ci in range(1, ws.max_column + 1):
-            cell = ws.cell(rowi, ci)
-            if not _is_edit_cell(cell) or cell.value is None:
-                continue
-            raw = str(cell.value).strip()
-            if is_note_ref(raw):
-                continue
-            vclean = raw.replace(',', '').replace('(', '').replace(')', '').replace('-', '').replace(' ', '')
-            if vclean and vclean.replace('.', '').isdigit() and len(vclean) >= 4:
-                amt_cells.append((ci, cell))
-        if len(amt_cells) == 0:
-            continue
-        if len(amt_cells) == 1:
-            _cc, c_cell = amt_cells[0]
-            p_cell = None
-            for ci2 in range(_cc + 1, ws.max_column + 1):
-                cand = ws.cell(rowi, ci2)
-                if _is_edit_cell(cand) and str(cand.value or '').strip() in ('-', ''):
-                    p_cell = cand
-                    break
-            if p_cell is None:
-                continue
-            p_cell.value = c_cell.value
-            c_cell.value = '000' if fill_000 else None
-            continue
-        amt_cells.sort(key=lambda x: x[0])
-        _, c_cell = amt_cells[-2]
-        _, p_cell = amt_cells[-1]
-        p_cell.value = c_cell.value
-        c_cell.value = '000' if fill_000 else None
-
-def _apply_rollover_smart_bytes(xlsx_bytes):
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
-    FIN_KEYWORDS = ('재무상태표', '손익계산서', '포괄손익', '자본변동표', '현금흐름표')
-    for sname in wb.sheetnames:
-        if sname in ('📋사용안내','_원본XML','_원본DSD_바이너리','🤖AI검증결과'):
-            continue
-        if '주석' in sname:
-            continue
-        if any(kw in sname for kw in FIN_KEYWORDS) or sname.startswith(FIN_PREFIXES):
-            _rollover_sheet_safe(wb[sname], fill_000=True)
-    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
-
-def _extract_note_num_from_name_or_title(name, title=''):
-    text = f'{name} {title}'.strip()
-    pats = [r'주석[_\s]*(\d{1,2})', r'(^|[^\d])(\d{1,2})(?:[^\d]|$)']
-    for pat in pats:
-        m = re.search(pat, text)
-        if m:
-            val = m.group(1) if m.lastindex == 1 else m.group(2)
-            try:
-                n = int(val)
-                if 1 <= n <= 99:
-                    return n
-            except:
-                pass
+        print(f"Google API Error: {e}")
     return None
 
-def regroup_note_sheets_bytes(xlsx_bytes, notes_per_sheet=5):
-    """앱1 엔진이 만든 개별 주석 시트를 범위별 그룹 시트로 재구성."""
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
-    if '_원본XML' not in wb.sheetnames:
-        return xlsx_bytes, {'applied': False, 'reason': '_원본XML 없음'}
-    dsd_bytes = _read_original_dsd_bytes_from_wb(wb)
-    if not dsd_bytes:
-        return xlsx_bytes, {'applied': False, 'reason': '원본 DSD 숨김시트 없음'}
 
-    with zipfile.ZipFile(io.BytesIO(dsd_bytes)) as zf:
-        xml = zf.read('contents.xml').decode('utf-8', errors='replace')
-    _, tables = parse_xml(xml)
+def get_google_place_info_by_name(name: str, api_key: str):
+    """
+    장소명(문자열)으로 구글 Text Search API를 호출하여
+    place_id, 위도, 경도, 구글맵 URL을 반환합니다.
+    AI 자동 생성 일정의 장소 정보 자동 첨부에 사용됩니다.
+    """
+    if not api_key or not name:
+        return None
+    try:
+        search_res = requests.get(
+            f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={requests.utils.quote(name)}&key={api_key}&language=ko",
+            timeout=5
+        ).json()
 
-    note_conf = detect_note_anchor_conflicts(tables)
-    table_to_note = {}
-    for a in note_conf['anchors']:
-        table_to_note[a['table_idx']] = a['note_num']
-    # 직전 앵커 기준으로 비어 있는 번호도 이어받음
-    last_n = None
-    for t in sorted(tables, key=lambda x: x['idx']):
-        if t['idx'] in table_to_note:
-            last_n = table_to_note[t['idx']]
-        elif not t.get('fin_label') and last_n:
-            table_to_note[t['idx']] = last_n
+        if search_res.get("results"):
+            place = search_res["results"][0]
+            place_id = place.get("place_id", "")
+            return {
+                "place_id": place_id,
+                "name": place.get("name"),
+                "rating": place.get("rating"),
+                "lat": place.get("geometry", {}).get("location", {}).get("lat"),
+                "lng": place.get("geometry", {}).get("location", {}).get("lng"),
+                "map_url": f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else "",
+            }
+    except Exception as e:
+        print(f"Google Place Name Search Error: {e}")
+    return None
 
-    ws_map = wb['_원본XML']
-    note_rows = []
-    fin_rows = []
-    for row_idx in range(5, ws_map.max_row + 1):
-        sn = ws_map.cell(row_idx, 1).value
-        t_idx = ws_map.cell(row_idx, 2).value
-        typ = ws_map.cell(row_idx, 6).value
-        if not sn or sn == '-' or typ != 'TABLE':
-            continue
-        item = {'row_idx': row_idx, 'sheet': str(sn), 'table_idx': int(t_idx)}
-        if str(sn).startswith('📝'):
-            item['note_num'] = table_to_note.get(int(t_idx))
-            note_rows.append(item)
-        else:
-            fin_rows.append(item)
+# ─────────────────────────────────────────────
+# 도시 ↔ 통화 매핑
+# ─────────────────────────────────────────────
+CITY_CURRENCY_MAP = {
+    "도쿄": "JPY", "오사카": "JPY", "나고야": "JPY", "후쿠오카": "JPY",
+    "구마모토": "JPY", "가고시마": "JPY", "삿포로": "JPY", "오키나와": "JPY",
+    "타이베이": "TWD", "가오슝": "TWD",
+}
 
-    if not note_rows:
-        return xlsx_bytes, {'applied': False, 'reason': '주석 시트 없음', 'note_conflicts': note_conf}
+CURRENCY_SYMBOL_MAP = {
+    "JPY": "¥", "TWD": "NT$", "KRW": "₩", "USD": "$", "EUR": "€", "OTHER": "",
+}
 
-    # 그룹핑: note_num 기준, 번호 없으면 뒤로
-    ordered = sorted(note_rows, key=lambda x: (999 if x.get('note_num') is None else x['note_num'], x['table_idx']))
-    chunks, chunk, current_notes = [], [], []
-    for item in ordered:
-        n = item.get('note_num')
-        if n is not None and n not in current_notes and len(current_notes) >= max(1, notes_per_sheet):
-            chunks.append(chunk); chunk = []; current_notes = []
-        chunk.append(item)
-        if n is not None and n not in current_notes:
-            current_notes.append(n)
-    if chunk:
-        chunks.append(chunk)
+def resolve_currency(city: str, currency_override: Optional[str] = None) -> str:
+    if currency_override:
+        return currency_override
+    return CITY_CURRENCY_MAP.get(city, "OTHER")
 
-    old_note_sheet_names = [x['sheet'] for x in note_rows if x['sheet'] in wb.sheetnames]
-    insert_pos = 1 + len([sn for sn in wb.sheetnames if sn.startswith(FIN_PREFIXES)])
-    created_names = []
+# ─────────────────────────────────────────────
+# DB 초기화 및 마이그레이션
+# ─────────────────────────────────────────────
+def init_db():
+    conn = get_db_connection()
+    c = conn.cursor()
 
-    for ci, items in enumerate(chunks, start=1):
-        nums = [x['note_num'] for x in items if x.get('note_num') is not None]
-        if nums:
-            fn, ln = min(nums), max(nums)
-            sname = f'📝주석_{fn}' if fn == ln else f'📝주석_{fn}_{ln}'
-        else:
-            sname = f'📝주석_기타_{ci:02d}'
-        sname = sname[:31]
-        base_name = sname
-        suffix = 1
-        while sname in wb.sheetnames or sname in created_names:
-            suffix += 1
-            sname = f'{base_name[:28]}_{suffix}'
-        ws_new = wb.create_sheet(title=sname, index=min(insert_pos + ci - 1, len(wb.sheetnames)))
-        created_names.append(sname)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS room (
+            room_id          TEXT PRIMARY KEY,
+            title            TEXT NOT NULL,
+            admin_pw         TEXT NOT NULL,
+            team_pw          TEXT DEFAULT '',
+            city             TEXT DEFAULT '',
+            currency         TEXT DEFAULT 'JPY',
+            member_count     INTEGER DEFAULT 1,
+            is_comment_enabled BOOLEAN DEFAULT FALSE,
+            bookmark_name1   TEXT DEFAULT '',
+            bookmark_link1   TEXT DEFAULT '',
+            bookmark_name2   TEXT DEFAULT '',
+            bookmark_link2   TEXT DEFAULT '',
+            bookmark_name3   TEXT DEFAULT '',
+            bookmark_link3   TEXT DEFAULT ''
+        )
+    """)
 
-        cur_row = 1
-        for item in items:
-            if item['sheet'] not in wb.sheetnames:
-                continue
-            src = wb[item['sheet']]
-            max_col = src.max_column
-            for c in range(1, max_col + 1):
-                col_letter = get_column_letter(c)
-                ws_new.column_dimensions[col_letter].width = src.column_dimensions[col_letter].width
-            for r in range(1, src.max_row + 1):
-                if src.row_dimensions[r].height:
-                    ws_new.row_dimensions[cur_row + r - 1].height = src.row_dimensions[r].height
-                for c in range(1, src.max_column + 1):
-                    sc = src.cell(r, c)
-                    dc = ws_new.cell(cur_row + r - 1, c, sc.value)
-                    _copy_cell_style(sc, dc)
-            # 매핑 시트의 시트명 갱신
-            ws_map.cell(item['row_idx'], 1).value = sname
-            cur_row += src.max_row + 2
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS schedule (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            day_num         INTEGER NOT NULL,
+            start_time      TEXT NOT NULL,
+            end_time        TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            author          TEXT DEFAULT '방장',
+            google_map_url  TEXT DEFAULT '',
+            tabelog_url     TEXT DEFAULT '',
+            budget          INTEGER,
+            sort_order      INTEGER DEFAULT 0,
+            place_id        TEXT,
+            latitude        FLOAT,
+            longitude       FLOAT,
+            rating          FLOAT
+        )
+    """)
 
-    for sn in old_note_sheet_names:
-        if sn in wb.sheetnames:
-            del wb[sn]
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS flight (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            flight_type     TEXT NOT NULL,
+            airport         TEXT NOT NULL,
+            flight_num      TEXT NOT NULL,
+            terminal        TEXT DEFAULT '',
+            departure_time  TEXT NOT NULL,
+            arrival_time    TEXT NOT NULL,
+            memo            TEXT DEFAULT ''
+        )
+    """)
 
-    buf = io.BytesIO(); wb.save(buf)
-    return buf.getvalue(), {
-        'applied': True,
-        'grouped_sheet_count': len(created_names),
-        'group_names': created_names,
-        'note_conflicts': note_conf
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS accommodation (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            days_applied    TEXT NOT NULL,
+            hotel_name      TEXT NOT NULL,
+            google_map_url  TEXT DEFAULT '',
+            has_breakfast   BOOLEAN DEFAULT FALSE,
+            budget          INTEGER
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS suggestion (
+            id              SERIAL PRIMARY KEY,
+            room_id         TEXT NOT NULL,
+            suggester_name  TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            google_map_url  TEXT DEFAULT '',
+            tabelog_url     TEXT DEFAULT '',
+            good_cnt        INTEGER DEFAULT 0,
+            bad_cnt         INTEGER DEFAULT 0,
+            status          TEXT DEFAULT '대기중'
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS comment (
+            id          SERIAL PRIMARY KEY,
+            schedule_id INTEGER NOT NULL,
+            writer_name TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            created_at  TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    migrations = [
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'JPY'",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS member_count INTEGER DEFAULT 1",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS is_comment_enabled BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name1 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link1 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name2 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link2 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_name3 TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS bookmark_link3 TEXT DEFAULT ''",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS budget INTEGER",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS start_time TEXT DEFAULT ''",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS end_time TEXT DEFAULT ''",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS author TEXT DEFAULT '방장'",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS place_id TEXT",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS latitude FLOAT",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS longitude FLOAT",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS rating FLOAT",
+    ]
+    for sql in migrations:
+        try:
+            c.execute(sql)
+        except Exception:
+            conn.rollback()
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+
+# ─────────────────────────────────────────────
+# JWT 유틸 및 인증 로직
+# ─────────────────────────────────────────────
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def decode_token(token: str) -> Optional[dict]:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+def get_current_user_info(room_id: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    if not credentials:
+        return "guest", "훈수꾼"
+    payload = decode_token(credentials.credentials)
+    if not payload or payload.get("room_id") != room_id:
+        return "guest", "훈수꾼"
+    return payload.get("role", "guest"), payload.get("nickname", "훈수꾼")
+
+ADMIN_PW_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{6,}$")
+
+def validate_admin_pw(pw: str) -> bool:
+    return bool(ADMIN_PW_PATTERN.match(pw))
+
+def hash_pw(pw: str) -> str:
+    return pwd_context.hash(pw)
+
+def verify_pw(plain: str, hashed: str) -> bool:
+    if not hashed:
+        return False
+    return pwd_context.verify(plain, hashed)
+
+# ─────────────────────────────────────────────
+# Pydantic 데이터 모델
+# ─────────────────────────────────────────────
+class RoomCreate(BaseModel):
+    title: str
+    admin_pw: str
+    team_pw: Optional[str] = ""
+    city: Optional[str] = ""
+    currency: Optional[str] = ""
+    member_count: Optional[int] = 1
+    is_comment_enabled: Optional[bool] = False
+
+    @validator("admin_pw")
+    def validate_pw(cls, v):
+        if not validate_admin_pw(v):
+            raise ValueError("비밀번호는 영문과 숫자를 포함하여 6자 이상이어야 합니다.")
+        return v
+
+class RoomUpdate(BaseModel):
+    password: str
+    title: Optional[str] = None
+    team_pw: Optional[str] = None
+    city: Optional[str] = None
+    currency: Optional[str] = None
+    member_count: Optional[int] = None
+    is_comment_enabled: Optional[bool] = None
+    bookmark_name1: Optional[str] = None
+    bookmark_link1: Optional[str] = None
+    bookmark_name2: Optional[str] = None
+    bookmark_link2: Optional[str] = None
+    bookmark_name3: Optional[str] = None
+    bookmark_link3: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    room_id: str
+    password: str
+    nickname: Optional[str] = ""
+
+class ScheduleCreate(BaseModel):
+    day_num: int
+    start_time: str
+    end_time: str
+    content: str
+    google_map_url: Optional[str] = ""
+    tabelog_url: Optional[str] = ""
+    budget: Optional[int] = None
+
+# [패치 #7/#8] 일정 수정 DTO
+class ScheduleUpdate(BaseModel):
+    day_num: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    content: Optional[str] = None
+    google_map_url: Optional[str] = None
+    tabelog_url: Optional[str] = None
+    budget: Optional[int] = None
+
+# [패치 #1/#3] AI 스케줄 고도화 DTO
+class AiScheduleRequest(BaseModel):
+    city: str
+    days: int
+    model: Optional[str] = "gemini-2.5-flash"
+    keep_existing: Optional[bool] = False
+    feedback: Optional[str] = ""
+
+class ImportRequest(BaseModel):
+    export_code: str
+    clear_existing: bool = False
+
+class FlightCreate(BaseModel):
+    flight_type: str
+    airport: str
+    flight_num: str
+    terminal: Optional[str] = ""
+    departure_time: str
+    arrival_time: str
+    memo: Optional[str] = ""
+
+class AccommodationCreate(BaseModel):
+    days_applied: List[int]
+    hotel_name: str
+    google_map_url: Optional[str] = ""
+    has_breakfast: bool = False
+    budget: Optional[int] = None
+
+class ReorderRequest(BaseModel):
+    new_order: List[int]
+
+class SuggestionCreate(BaseModel):
+    suggester_name: str
+    content: str
+    google_map_url: Optional[str] = ""
+    tabelog_url: Optional[str] = ""
+
+class ApproveRequest(BaseModel):
+    day_num: int
+    start_time: str
+    end_time: str
+
+class CommentCreate(BaseModel):
+    writer_name: str
+    content: str
+
+# ─────────────────────────────────────────────
+# 정적 파일 & 로그인 API
+# ─────────────────────────────────────────────
+@app.get("/")
+@app.get("/{room_id}")
+def serve_frontend(room_id: str = None):
+    return FileResponse("index.html")
+
+@app.post("/auth/login")
+def login(req: LoginRequest):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT admin_pw, team_pw FROM room WHERE room_id=%s", (req.room_id,))
+    row = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
+
+    admin_pw_hash, team_pw_hash = row
+
+    if verify_pw(req.password, admin_pw_hash):
+        role = "admin"
+        nickname = "방장"
+    elif team_pw_hash and verify_pw(req.password, team_pw_hash):
+        role = "team"
+        if not req.nickname.strip():
+            raise HTTPException(status_code=400, detail="동행자는 닉네임을 반드시 입력해야 합니다.")
+        nickname = f"동행자 {req.nickname.strip()[:8]}"
+    else:
+        raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다.")
+
+    token = create_access_token({"sub": req.room_id, "room_id": req.room_id, "role": role, "nickname": nickname})
+    return {"access_token": token, "token_type": "bearer", "role": role, "nickname": nickname}
+
+@app.post("/create_room", status_code=201)
+def create_room(room: RoomCreate):
+    try:
+        rid = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+        currency = resolve_currency(room.city or "", room.currency or "")
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO room
+                   (room_id, title, admin_pw, team_pw, city, currency, member_count, is_comment_enabled)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (rid, room.title, hash_pw(room.admin_pw), hash_pw(room.team_pw) if room.team_pw else "",
+             room.city or "", currency, room.member_count or 1, room.is_comment_enabled)
+        )
+        conn.commit()
+        c.close()
+        conn.close()
+        return {"room_id": rid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
+
+# ─────────────────────────────────────────────
+# 메인 데이터 로드 API
+# ─────────────────────────────────────────────
+@app.get("/room/{room_id}/data")
+def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, nickname = get_current_user_info(room_id, credentials)
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT title, city, currency, member_count, is_comment_enabled,
+               bookmark_name1, bookmark_link1, bookmark_name2, bookmark_link2, bookmark_name3, bookmark_link3
+        FROM room WHERE room_id=%s
+    """, (room_id,))
+    room_row = c.fetchone()
+    if not room_row:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
+
+    (title, city, currency, member_count, is_comment_enabled,
+     b_n1, b_l1, b_n2, b_l2, b_n3, b_l3) = room_row
+
+    currency_symbol = CURRENCY_SYMBOL_MAP.get(currency, "")
+    bookmarks = []
+    if b_n1 and b_l1: bookmarks.append({"name": b_n1, "url": b_l1})
+    if b_n2 and b_l2: bookmarks.append({"name": b_n2, "url": b_l2})
+    if b_n3 and b_l3: bookmarks.append({"name": b_n3, "url": b_l3})
+
+    c.execute("SELECT id, flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo FROM flight WHERE room_id=%s ORDER BY id ASC", (room_id,))
+    flights = [{"id": r[0], "flight_type": r[1], "airport": r[2], "flight_num": r[3], "terminal": r[4], "departure_time": r[5], "arrival_time": r[6], "memo": r[7]} for r in c.fetchall()]
+
+    c.execute("SELECT id, days_applied, hotel_name, google_map_url, has_breakfast, budget FROM accommodation WHERE room_id=%s ORDER BY id ASC", (room_id,))
+    accommodations = [{"id": r[0], "days_applied": [int(x) for x in r[1].split(',') if x], "hotel_name": r[2], "google_map_url": r[3], "has_breakfast": r[4], "budget": r[5]} for r in c.fetchall()]
+
+    c.execute(
+        """SELECT id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, rating
+           FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC, start_time ASC""",
+        (room_id,)
+    )
+    schedules = [
+        {"id": r[0], "day_num": r[1], "start_time": r[2], "end_time": r[3], "content": r[4],
+         "author": r[5], "google_map_url": r[6] or "", "tabelog_url": r[7] or "", "budget": r[8],
+         "place_id": r[9], "rating": r[10]}
+        for r in c.fetchall()
+    ]
+
+    schedule_ids = [s["id"] for s in schedules]
+    comments_map: dict = {s["id"]: [] for s in schedules}
+    if schedule_ids:
+        c.execute(
+            """SELECT id, schedule_id, writer_name, content, to_char(created_at AT TIME ZONE 'Asia/Seoul', 'MM/DD HH24:MI')
+               FROM comment WHERE schedule_id = ANY(%s) ORDER BY created_at ASC""",
+            (schedule_ids,)
+        )
+        for row in c.fetchall():
+            comments_map[row[1]].append({"id": row[0], "writer_name": row[2], "content": row[3], "created_at": row[4]})
+    for s in schedules:
+        s["comments"] = comments_map[s["id"]]
+
+    c.execute(
+        """SELECT id, suggester_name, content, google_map_url, tabelog_url, good_cnt, bad_cnt, status
+           FROM suggestion WHERE room_id=%s ORDER BY id DESC""", (room_id,)
+    )
+    suggestions = [{"id": r[0], "suggester_name": r[1], "content": r[2], "google_map_url": r[3] or "",
+                    "tabelog_url": r[4] or "", "good_cnt": r[5], "bad_cnt": r[6], "status": r[7]} for r in c.fetchall()]
+
+    c.close()
+    conn.close()
+
+    return {
+        "room_id": room_id, "title": title, "city": city, "currency": currency,
+        "currency_symbol": currency_symbol, "member_count": member_count,
+        "is_comment_enabled": is_comment_enabled, "role": role, "nickname": nickname,
+        "bookmarks": bookmarks, "flights": flights, "accommodations": accommodations,
+        "schedules": schedules, "suggestions": suggestions
     }
 
-def apply_period_change_only_bytes(xlsx_bytes, cur_period=None, cur_year=None, year_offset=1,
-                                   start_m=None, start_d=None, end_m=None, end_d=None):
-    """헤더의 기수/연도/기간 텍스트만 보수적으로 치환."""
-    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
-    if cur_year is None:
-        cur_year = datetime.utcnow().year + max(0, int(year_offset))
-    if cur_period is None:
-        cur_period = 1
+# ─────────────────────────────────────────────
+# 방 설정 및 북마크 수정
+# ─────────────────────────────────────────────
+@app.patch("/room/{room_id}/settings")
+def update_room_settings(room_id: str, req: RoomUpdate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
-    # dart_gui의 apply_period_change를 보수 이식
-    prev_period = int(cur_period) - 1
-    prev_year = int(cur_year) - 1
-    skip = {'📋사용안내','_원본XML','_원본DSD_바이너리','🤖AI검증결과'}
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT admin_pw FROM room WHERE room_id=%s", (room_id,))
+    row = c.fetchone()
 
-    old_cur_p = old_prev_p = None
-    for sname in wb.sheetnames:
-        if not any(sname.startswith(p) for p in FIN_PREFIXES):
-            continue
-        ws = wb[sname]
-        for row in ws.iter_rows(max_row=10, values_only=True):
-            for v in row:
-                if not v or not isinstance(v, str):
-                    continue
-                m = re.search(r'제\s*(\d{1,3})\s*\(당\)', v)
-                if m and not old_cur_p:
-                    old_cur_p = int(m.group(1))
-                m = re.search(r'제\s*(\d{1,3})\s*\(전\)', v)
-                if m and not old_prev_p:
-                    old_prev_p = int(m.group(1))
-        if old_cur_p:
-            break
-    if not old_cur_p or old_cur_p <= 0:
-        old_cur_p = cur_period - 1
-    if not old_prev_p or old_prev_p <= 0:
-        old_prev_p = cur_period - 2
+    if not row or not verify_pw(req.password, row[0]):
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="관리자 비밀번호가 올바르지 않습니다.")
 
-    years = []
-    for sname in wb.sheetnames:
-        if not any(sname.startswith(p) for p in FIN_PREFIXES):
-            continue
-        ws = wb[sname]
-        for row in ws.iter_rows(max_row=15, values_only=True):
-            for v in row:
-                if v and isinstance(v, str):
-                    years += [int(x) for x in re.findall(r'(20\d{2})년', v)]
-        if len(set(years)) >= 2:
-            break
-    years = sorted(set(years))
-    if len(years) >= 2:
-        old_prev_y, old_cur_y = years[0], years[1]
-    elif len(years) == 1:
-        old_cur_y = years[0]; old_prev_y = old_cur_y - 1
-    else:
-        old_cur_y = cur_year - 1; old_prev_y = cur_year - 2
+    fields = []
+    values = []
 
-    def rep(t):
-        if not t or not isinstance(t, str):
-            return t
-        t = re.sub(rf'제\s*{old_cur_p}\s*\(당\)', f'제 {cur_period}(당)', t)
-        t = re.sub(rf'제\s*{old_prev_p}\s*\(전\)', f'제 {prev_period}(전)', t)
-        t = re.sub(rf'제\s*{old_cur_p}\s*기\b', f'제 {cur_period}기', t)
-        t = re.sub(rf'제\s*{old_prev_p}\s*기\b', f'제 {prev_period}기', t)
-        t = t.replace(f'{old_cur_y}년', f'{cur_year}년')
-        t = t.replace(f'{old_prev_y}년', f'{prev_year}년')
-        if all(v is not None for v in (start_m, start_d, end_m, end_d)):
-            old_dates = re.findall(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', t)
-            if len(old_dates) >= 1:
-                t = re.sub(r'(20\d{2})년\s*\d{1,2}월\s*\d{1,2}일', f'{cur_year}년 {int(start_m)}월 {int(start_d)}일', t, count=1)
-            if len(old_dates) >= 2:
-                t = re.sub(r'(20\d{2})년\s*\d{1,2}월\s*\d{1,2}일', f'{cur_year}년 {int(end_m)}월 {int(end_d)}일', t, count=1)
-        return t
+    if req.title is not None: fields.append("title=%s"); values.append(req.title)
+    if req.team_pw is not None: fields.append("team_pw=%s"); values.append(hash_pw(req.team_pw) if req.team_pw else "")
+    if req.member_count is not None: fields.append("member_count=%s"); values.append(req.member_count)
+    if req.is_comment_enabled is not None: fields.append("is_comment_enabled=%s"); values.append(req.is_comment_enabled)
+    if req.bookmark_name1 is not None: fields.append("bookmark_name1=%s"); values.append(req.bookmark_name1)
+    if req.bookmark_link1 is not None: fields.append("bookmark_link1=%s"); values.append(req.bookmark_link1)
+    if req.bookmark_name2 is not None: fields.append("bookmark_name2=%s"); values.append(req.bookmark_name2)
+    if req.bookmark_link2 is not None: fields.append("bookmark_link2=%s"); values.append(req.bookmark_link2)
+    if req.bookmark_name3 is not None: fields.append("bookmark_name3=%s"); values.append(req.bookmark_name3)
+    if req.bookmark_link3 is not None: fields.append("bookmark_link3=%s"); values.append(req.bookmark_link3)
 
-    for sname in wb.sheetnames:
-        if sname in skip:
-            continue
-        ws = wb[sname]
-        for rowi in range(1, ws.max_row + 1):
-            for ci in range(1, ws.max_column + 1):
-                cell = ws.cell(rowi, ci)
-                if cell.value and isinstance(cell.value, str):
-                    nv = rep(cell.value)
-                    if nv != cell.value:
-                        cell.value = nv
-    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+    if fields:
+        values.append(room_id)
+        c.execute(f"UPDATE room SET {', '.join(fields)} WHERE room_id=%s", values)
+        conn.commit()
 
-def build_diff_report_xlsx(diff_result):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = 'Diff요약'
-    ws.append(['구분', '테이블', '행', '열', '수정전', '수정후'])
-    for it in diff_result.get('changed', []):
-        ws.append(['변경', it['table'], it['row'], it['col'], it['before'], it['after']])
-    for it in diff_result.get('added', []):
-        ws.append(['추가', it['table'], it['row'], it['col'], '', it['after']])
-    for it in diff_result.get('removed', []):
-        ws.append(['삭제', it['table'], it['row'], it['col'], it['before'], ''])
-    for c in range(1, 7):
-        ws.column_dimensions[get_column_letter(c)].width = 24 if c >= 5 else 14
-    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
 
-# ── 14. Flask 앱 & HTML 템플릿 ───────────────────────────────────────────────
-app = Flask(__name__)
+# ─────────────────────────────────────────────
+# 여행 코스 Export / Import
+# ─────────────────────────────────────────────
+@app.get("/room/{room_id}/export")
+def export_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
-HTML = """<!DOCTYPE html>
-<html lang=\"ko\">
-<head>
-<meta charset=\"UTF-8\">
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-<title>EasyDSD v0.13</title>
-<style>
-*{box-sizing:border-box} body{margin:0;font-family:'Malgun Gothic',sans-serif;background:#e9edf2;color:#223}
-.hd{background:linear-gradient(135deg,#0f2845,#244b73);color:#fff;padding:18px 24px}
-.hd h1{margin:0;font-size:22px}.hd p{margin:6px 0 0;font-size:12px;opacity:.88}
-.api{background:#fff;padding:12px 24px;border-bottom:1px solid #d7dfe8;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.api label{font-size:12px;font-weight:bold;color:#556}.api input,.api select{padding:7px 10px;border:1px solid #c5d0db;border-radius:8px}
-.api input{min-width:240px}.badge{display:inline-block;padding:5px 10px;border-radius:999px;background:#eef2f6;color:#667;font-size:12px;font-weight:bold}
-.badge.ok{background:#d4edda;color:#155724}.wrap{max-width:1100px;margin:18px auto;padding:0 14px 30px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap}.tb{border:none;border-radius:12px 12px 0 0;background:#c8d3de;color:#455;padding:11px 14px;font-weight:bold;cursor:pointer}.tb.on{background:#fff;color:#163a5e}
-.pane{display:none;background:#fff;border-radius:0 14px 14px 14px;padding:22px;box-shadow:0 3px 16px rgba(0,0,0,.07)}.pane.on{display:block}
-.notice{border-radius:10px;padding:12px 15px;margin-bottom:16px;border:2px solid #ffc107;background:linear-gradient(135deg,#fff3cd,#ffe39c)} .notice.red{border-color:#dc3545;background:linear-gradient(135deg,#f8d7da,#f3bec5)}
-.notice strong{display:block;color:#6c4b00;font-size:14px}.notice.red strong{color:#842029}.notice p{margin:4px 0 0;font-size:12px}
-.dz{border:2px dashed #96a9bf;border-radius:12px;padding:26px;text-align:center;background:#f7fafe;cursor:pointer;margin:10px 0;transition:.15s ease}.dz.ok{border-color:#28a745;background:#f2fff5}.dz.drag{border-color:#0d6efd;background:#eef6ff;transform:translateY(-1px)}.dz .ico{font-size:26px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.opt{background:#f3f7fb;border-radius:10px;padding:14px;margin:12px 0}.opt label{display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:13px}
-.opt small{color:#667}.opt input[type=number], .opt select{padding:6px 8px;border:1px solid #c5d0db;border-radius:8px}
-.btn{width:100%;padding:14px;border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:bold;cursor:pointer;margin-top:12px}
-.btn:disabled{opacity:.55;cursor:not-allowed}.b1{background:linear-gradient(135deg,#275d8f,#2ba7a6)}.b2{background:linear-gradient(135deg,#7b46d3,#9157d9)}.b3{background:linear-gradient(135deg,#1f8d4a,#2bbb75)}
-.b4{background:linear-gradient(135deg,#db7a12,#ef9a1a)}.b5{background:linear-gradient(135deg,#7d3fc7,#b05ee5)}.b6{background:linear-gradient(135deg,#34495e,#4f6b85)}
-.spin{display:none;text-align:center;padding:16px}.spin.on{display:block}.res{display:none;margin-top:14px}.box{background:#f8fafc;border:1px solid #d7e0e9;border-radius:10px;padding:14px;white-space:pre-wrap;overflow:auto;max-height:520px;font-size:12px;line-height:1.7}
-.dl{display:inline-block;margin-top:10px;padding:11px 18px;border-radius:10px;background:#0d6efd;color:#fff;text-decoration:none;font-weight:bold}
-.mini{font-size:12px;color:#667}.kv{display:grid;grid-template-columns:180px 1fr;gap:10px;font-size:12px;margin:6px 0}.kv b{color:#28496a}
-.tbl{width:100%;border-collapse:collapse;font-size:12px}.tbl th{background:#1f4e79;color:#fff;padding:8px}.tbl td{padding:7px 8px;border-bottom:1px solid #e5ebf2;vertical-align:top}
-.sec h3{margin:0 0 10px;color:#163a5e}.pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:bold}.ok{background:#d4edda;color:#155724}.wn{background:#fff3cd;color:#856404}.er{background:#f8d7da;color:#842029}
-.devgrid{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}.card{background:#f6f9fc;border:1px solid #dbe4ec;border-radius:12px;padding:16px}
-ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
-@media (max-width:900px){.grid2,.grid3,.devgrid{grid-template-columns:1fr}.api input{min-width:180px}}
-</style>
-</head>
-<body>
-<div class=\"hd\">
-  <h1>⚡ EasyDSD v0.13</h1>
-  <p>app(1) 핵심 DSD↔Excel 엔진 유지 + 롤오버 + 주석정리 + 기수/연도 밀기 + AI검증 + 전기금액검증 + Diff</p>
-</div>
+    conn = get_db_connection()
+    c = conn.cursor()
 
-<div class=\"api\">
-  <label>AI 제공자</label>
-  <select id=\"apiProvider\">
-    <option value=\"gemini\">Gemini</option>
-    <option value=\"anthropic\">Anthropic (Claude)</option>
-  </select>
-  <label>API Key</label>
-  <input id=\"apiKey\" type=\"password\" placeholder=\"AI 검증 탭에서만 사용\">
-  <label>모델</label>
-  <select id=\"apiModel\">
-    <option value=\"gemini-1.5-flash\">Gemini 1.5 Flash</option>
-    <option value=\"gemini-1.5-pro\">Gemini 1.5 Pro</option>
-    <option value=\"gemini-2.0-flash\">Gemini 2.0 Flash</option>
-    <option value=\"claude-3-5-sonnet-latest\">Claude 3.5 Sonnet</option>
-    <option value=\"claude-3-7-sonnet-latest\">Claude 3.7 Sonnet</option>
-  </select>
-  <span id=\"apiBadge\" class=\"badge\">미설정</span>
-</div>
+    c.execute("SELECT flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo FROM flight WHERE room_id=%s", (room_id,))
+    flights = [{"flight_type": r[0], "airport": r[1], "flight_num": r[2], "terminal": r[3], "departure_time": r[4], "arrival_time": r[5], "memo": r[6]} for r in c.fetchall()]
 
-<div class=\"wrap\">
-  <div class=\"tabs\">
-    <button class=\"tb on\">① DSD→Excel</button>
-    <button class=\"tb\">② AI 검증</button>
-    <button class=\"tb\">③ Excel→DSD</button>
-    <button class=\"tb\">④ 전기금액 검증</button>
-    <button class=\"tb\">⑤ DSD 비교분석</button>
-    <button class=\"tb\">⑥ 개발자 정보</button>
-  </div>
+    c.execute("SELECT days_applied, hotel_name, google_map_url, has_breakfast, budget FROM accommodation WHERE room_id=%s", (room_id,))
+    accommodations = [{"days_applied": [int(x) for x in r[0].split(',') if x], "hotel_name": r[1], "google_map_url": r[2], "has_breakfast": r[3], "budget": r[4]} for r in c.fetchall()]
 
-  <div id=\"p1\" class=\"pane on\">
-    <div class=\"notice\">
-      <strong>⚠ 행 추가 시 [복사된 셀 삽입] 필수</strong>
-      <p>핵심 엔진이 행 추가/삭제를 반영하려면 기존 행을 복사한 뒤 <b>복사된 셀 삽입</b>으로 작업해야 합니다.</p>
-    </div>
-    <div class=\"dz\" id=\"dz1\"><div class=\"ico\">📁</div><div id=\"dt1\">DSD 파일을 선택하세요</div></div>
-    <input id=\"f1\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
+    c.execute("SELECT day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC", (room_id,))
+    schedules = [{"day_num": r[0], "start_time": r[1], "end_time": r[2], "content": r[3], "author": r[4], "google_map_url": r[5], "tabelog_url": r[6], "budget": r[7], "place_id": r[8], "latitude": r[9], "longitude": r[10], "rating": r[11], "sort_order": r[12]} for r in c.fetchall()]
 
-    <div class=\"opt\">
-      <label><input type=\"checkbox\" id=\"optRollover\"> <div><b>전기로 밀기(롤오버)</b><br><small>당기 숫자를 전기 칸으로 밀고 당기 칸을 000으로 채웁니다.</small></div></label>
-      <label><input type=\"checkbox\" id=\"optNotes\" checked> <div><b>분리된 시트 정리</b><br><small>주석 시트를 번호 범위 기준으로 묶어 정리합니다. _원본XML 매핑도 함께 갱신합니다.</small></div></label>
-      <label><input type=\"checkbox\" id=\"optPeriod\"> <div><b>기수/연도 밀기</b><br><small>헤더의 제 n기 / 연도 문구를 보수적으로 갱신합니다.</small></div></label>
-      <div class=\"grid3\">
-        <div><small>연도 오프셋</small><br><input type=\"number\" id=\"yearOffset\" value=\"1\" min=\"-5\" max=\"5\"></div>
-        <div><small>주석 묶음 크기</small><br><select id=\"noteChunk\"><option value=\"3\">3개 주석씩</option><option value=\"5\" selected>5개 주석씩</option><option value=\"7\">7개 주석씩</option></select></div>
-        <div><small>현재 기수(선택)</small><br><input type=\"number\" id=\"curPeriod\" value=\"1\" min=\"1\" max=\"999\"></div>
-      </div>
-      <div class=\"grid3\" style=\"margin-top:8px\">
-        <div><small>현재 연도(선택)</small><br><input type=\"number\" id=\"curYear\" value=\"2026\" min=\"2000\" max=\"2099\"></div>
-        <div><small>시작월(선택)</small><br><input type=\"number\" id=\"startM\" min=\"1\" max=\"12\"></div>
-        <div><small>시작일(선택)</small><br><input type=\"number\" id=\"startD\" min=\"1\" max=\"31\"></div>
-      </div>
-      <div class=\"grid3\" style=\"margin-top:8px\">
-        <div><small>종료월(선택)</small><br><input type=\"number\" id=\"endM\" min=\"1\" max=\"12\"></div>
-        <div><small>종료일(선택)</small><br><input type=\"number\" id=\"endD\" min=\"1\" max=\"31\"></div>
-        <div><small>변환 전 점검</small><br><button type=\"button\" id=\"btnPrecheck\" class=\"btn b6\" style=\"margin-top:0;padding:10px\">사전 점검</button></div>
-      </div>
-    </div>
-    <button class=\"btn b1\" id=\"btn1\" disabled>📊 Excel 파일 생성</button>
-    <div id=\"sp1\" class=\"spin\">변환 중...</div>
-    <div id=\"r1\" class=\"res\"><div id=\"r1box\" class=\"box\"></div></div>
-  </div>
+    c.close()
+    conn.close()
 
-  <div id=\"p2\" class=\"pane\">
-    <div class=\"notice red\">
-      <strong>🤖 AI 검증 탭은 API Key 입력 사용자만 실행</strong>
-      <p>여기서 대차평균, 합계/총계 행 존재 여부, 자릿수 편차를 Python으로 계산한 뒤 AI 해설을 붙입니다. 합계/총계 관련 검증도 이 탭에서만 수행합니다.</p>
-    </div>
-    <div class=\"dz\" id=\"dz2\"><div class=\"ico\">🤖</div><div id=\"dt2\">검증할 Excel(.xlsx) 파일</div></div>
-    <input id=\"f2\" type=\"file\" accept=\".xlsx\" style=\"display:none\">
-    <button class=\"btn b2\" id=\"btn2\" disabled>🤖 AI 검증 실행</button>
-    <div id=\"sp2\" class=\"spin\">AI 검증 중...</div>
-    <div id=\"r2\" class=\"res\"><div id=\"r2box\" class=\"box\"></div></div>
-  </div>
+    data = {"flights": flights, "accommodations": accommodations, "schedules": schedules}
+    json_str = json.dumps(data, ensure_ascii=False)
+    b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
 
-  <div id=\"p3\" class=\"pane\">
-    <div class=\"notice\">
-      <strong>⚠ 핵심 재조립 전 사전 점검 권장</strong>
-      <p>업로드 가능 여부를 먼저 점검하고, 복구 가능한 항목은 별도 복구본을 내려받아 다시 시도할 수 있습니다.</p>
-    </div>
-    <div class=\"dz\" id=\"dz3\"><div class=\"ico\">📄</div><div id=\"dt3\">수정된 Excel(.xlsx) 파일</div></div>
-    <input id=\"f3\" type=\"file\" accept=\".xlsx\" style=\"display:none\">
-    <div class=\"grid2\">
-      <button class=\"btn b6\" id=\"btn3a\" disabled>🩺 업로드 가능 여부 점검</button>
-      <button class=\"btn b6\" id=\"btn3b\" disabled>🛠 복구본 생성</button>
-    </div>
-    <button class=\"btn b3\" id=\"btn3\" disabled>🔧 DSD 파일 재조립</button>
-    <div id=\"sp3\" class=\"spin\">재조립 중...</div>
-    <div id=\"r3\" class=\"res\"><div id=\"r3box\" class=\"box\"></div></div>
-  </div>
+    return {"export_code": b64_str}
 
-  <div id=\"p4\" class=\"pane\">
-    <div class=\"notice red\">
-      <strong>📋 전기금액 검증</strong>
-      <p>작년 DSD의 당기 금액과 올해 DSD의 전기 금액을 항목별로 대조합니다.</p>
-    </div>
-    <div class=\"grid2\">
-      <div>
-        <div class=\"dz\" id=\"dz4p\"><div class=\"ico\">📁</div><div id=\"dt4p\">작년 DSD</div></div>
-        <input id=\"f4p\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
-      </div>
-      <div>
-        <div class=\"dz\" id=\"dz4c\"><div class=\"ico\">📁</div><div id=\"dt4c\">올해 DSD</div></div>
-        <input id=\"f4c\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
-      </div>
-    </div>
-    <button class=\"btn b4\" id=\"btn4\" disabled>🔍 전기금액 검증</button>
-    <div id=\"sp4\" class=\"spin\">비교 중...</div>
-    <div id=\"r4\" class=\"res\"><div id=\"r4box\" class=\"box\"></div></div>
-  </div>
+@app.post("/room/{room_id}/import")
+def import_room_data(room_id: str, req: ImportRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
-  <div id=\"p5\" class=\"pane\">
-    <div class=\"notice red\">
-      <strong>🔎 DSD 비교분석</strong>
-      <p>변경된 셀만 추출해 보여주고, 원하면 Diff 리포트를 Excel로도 내려받을 수 있습니다.</p>
-    </div>
-    <div class=\"grid2\">
-      <div>
-        <div class=\"dz\" id=\"dz5b\"><div class=\"ico\">📁</div><div id=\"dt5b\">수정 전 DSD</div></div>
-        <input id=\"f5b\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
-      </div>
-      <div>
-        <div class=\"dz\" id=\"dz5a\"><div class=\"ico\">📁</div><div id=\"dt5a\">수정 후 DSD</div></div>
-        <input id=\"f5a\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
-      </div>
-    </div>
-    <div class=\"grid2\">
-      <button class=\"btn b5\" id=\"btn5\" disabled>🔎 JSON 비교 보기</button>
-      <button class=\"btn b6\" id=\"btn5x\" disabled>📥 Diff 리포트 다운로드</button>
-    </div>
-    <div id=\"sp5\" class=\"spin\">비교 중...</div>
-    <div id=\"r5\" class=\"res\"><div id=\"r5box\" class=\"box\"></div></div>
-  </div>
-
-  <div id=\"p6\" class=\"pane\">
-    <div class=\"devgrid\">
-      <div class=\"card\">
-        <h2 style=\"margin-top:0\">개발자 정보</h2>
-        <div class=\"kv\"><b>프로젝트</b><div>EasyDSD v0.13</div></div>
-        <div class=\"kv\"><b>베이스 엔진</b><div>app(1)의 DSD↔Excel 핵심 엔진 유지</div></div>
-        <div class=\"kv\"><b>추가 레이어</b><div>롤오버 · 주석시트 정리 · 기수/연도 변경 · AI검증 · 사전점검 · 복구본 생성 · Diff 리포트</div></div>
-        <div class=\"kv\"><b>지원 파일</b><div>.dsd / .xlsx</div></div>
-        <div class=\"kv\"><b>연락</b><div><a href=\"mailto:eeffco11@naver.com\">eeffco11@naver.com</a></div></div>
-      </div>
-      <div class=\"card\">
-        <h3 style=\"margin-top:0\">안전 원칙</h3>
-        <ul class=\"clean\">
-          <li>핵심 DSD↔Excel 엔진은 직접 수정하지 않음</li>
-          <li>부가기능은 후처리/검증/리포트 레이어로만 추가</li>
-          <li>스타일을 대량 재작성하는 기능은 제외</li>
-          <li>행 추가는 반드시 복사된 셀 삽입 방식 권장</li>
-        </ul>
-      </div>
-    </div>
-    <div class=\"card\" style=\"margin-top:16px\">
-      <h3 style=\"margin-top:0\">이번 버전 주요 기능</h3>
-      <ul class=\"clean\">
-        <li>DSD→Excel: 롤오버 / 주석 시트 정리 / 기수·연도 밀기</li>
-        <li>AI 검증: API Key 입력 사용자만 실행, 합계·총계 관련 검증 포함</li>
-        <li>Excel→DSD: 사전 점검 및 제한적 복구본 생성</li>
-        <li>전기금액 검증 및 DSD Diff 리포트 다운로드</li>
-        <li>주석 번호 충돌 탐지 및 사용자 친화 오류 메시지</li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  'use strict';
-  const F = {};
-  const DZ = {
-    '1':  {inp:'f1',  txt:'dt1',  dz:'dz1',  btns:['btn1']},
-    '2':  {inp:'f2',  txt:'dt2',  dz:'dz2',  btns:['btn2']},
-    '3':  {inp:'f3',  txt:'dt3',  dz:'dz3',  btns:['btn3','btn3a','btn3b']},
-    '4p': {inp:'f4p', txt:'dt4p', dz:'dz4p', btns:[]},
-    '4c': {inp:'f4c', txt:'dt4c', dz:'dz4c', btns:[]},
-    '5b': {inp:'f5b', txt:'dt5b', dz:'dz5b', btns:[]},
-    '5a': {inp:'f5a', txt:'dt5a', dz:'dz5a', btns:[]}
-  };
-
-  function el(id){ return document.getElementById(id); }
-  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function setText(id,t){ const e=el(id); if(e) e.textContent=t; }
-  function setHtml(id,h){ const e=el(id); if(e) e.innerHTML=h; }
-  function show(id,on){ const e=el(id); if(e) e.style.display=on?'block':'none'; }
-  function dis(id,on){ const e=el(id); if(e) e.disabled=!!on; }
-
-  function refreshPairBtns(){
-    dis('btn4', !(F['4p']&&F['4c']));
-    var ok=!!(F['5b']&&F['5a']);
-    dis('btn5',!ok); dis('btn5x',!ok);
-  }
-
-  function fileLoaded(key, files){
-    var cfg=DZ[key];
-    if(!cfg||!files||!files[0]) return;
-    F[key]=files[0];
-    setText(cfg.txt, '\\u2705 '+F[key].name);
-    var dz=el(cfg.dz); if(dz) dz.classList.add('ok');
-    (cfg.btns||[]).forEach(function(id){ dis(id,false); });
-    refreshPairBtns();
-  }
-
-  function bindDz(key){
-    var cfg=DZ[key];
-    var dz=el(cfg.dz), inp=el(cfg.inp);
-    if(!dz||!inp) return;
-    dz.addEventListener('click', function(e){
-      if(e.target && e.target.closest('input,button,a,label,select,textarea')) return;
-      inp.click();
-    });
-    inp.addEventListener('change', function(){ fileLoaded(key, inp.files); });
-    dz.addEventListener('dragenter', function(e){ e.preventDefault(); dz.classList.add('drag'); });
-    dz.addEventListener('dragover',  function(e){ e.preventDefault(); dz.classList.add('drag'); });
-    dz.addEventListener('dragleave', function(e){ e.preventDefault(); dz.classList.remove('drag'); });
-    dz.addEventListener('dragend',   function(e){ e.preventDefault(); dz.classList.remove('drag'); });
-    dz.addEventListener('drop', function(e){
-      e.preventDefault(); dz.classList.remove('drag');
-      var files=e.dataTransfer&&e.dataTransfer.files;
-      if(!files||!files.length) return;
-      try{ var dt=new DataTransfer(); dt.items.add(files[0]); inp.files=dt.files; }catch(_){}
-      fileLoaded(key, files);
-    });
-  }
-
-  function busy(n,on,msg){
-    var sp=el('sp'+n);
-    if(sp){ sp.classList[on?'add':'remove']('on'); if(msg) sp.textContent=msg; }
-    dis('btn'+n, on);
-  }
-
-  /* ── 렌더러 ── */
-  function renderPrecheck(d){
-    var h='<h3>사전 점검 결과</h3>';
-    h+='<div class="kv"><b>전체 TABLE</b><div>'+esc(d.table_count)+'</div></div>';
-    h+='<div class="kv"><b>재무제표 TABLE</b><div>'+esc(d.financial_table_count)+'</div></div>';
-    h+='<div class="kv"><b>주석 TABLE</b><div>'+esc(d.note_table_count)+'</div></div>';
-    if(d.warnings&&d.warnings.length) h+='<div><span class="pill wn">주의</span> '+esc(d.warnings.join(' / '))+'</div>';
-    var nc=d.note_conflicts||{};
-    h+='<div class="kv"><b>주석 중복</b><div>'+esc((nc.duplicates||[]).length)+'건</div></div>';
-    h+='<div class="kv"><b>주석 공백 번호</b><div>'+esc(((nc.missing_numbers||[]).join(', '))||'없음')+'</div></div>';
-    return h;
-  }
-  function renderAi(data){
-    var h='<h3>Python 검증 요약</h3>';
-    var s=(data.python_validation||{}).summary||{};
-    h+='<div class="kv"><b>시트 수</b><div>'+esc(s.sheet_count)+'</div></div>';
-    h+='<div class="kv"><b>숫자 셀 수</b><div>'+esc(s.numeric_cell_count)+'</div></div>';
-    h+='<div class="kv"><b>경고</b><div>'+esc(s.warning_count)+'</div></div>';
-    h+='<div class="kv"><b>오류</b><div>'+esc(s.error_count)+'</div></div>';
-    h+='<hr><h3>AI 의견</h3><div>'+esc(data.ai_validation||'').replace(/\\n/g,'<br>')+'</div>';
-    return h;
-  }
-  function renderPrior(data){
-    var h='<h3>전기금액 검증 결과</h3>';
-    var s=data.summary||{};
-    h+='<div class="kv"><b>일치</b><div>'+esc(s.ok)+'</div></div>';
-    h+='<div class="kv"><b>불일치</b><div>'+esc(s.mismatch)+'</div></div>';
-    h+='<div class="kv"><b>누락</b><div>'+esc(s.missing)+'</div></div>';
-    h+='<table class="tbl"><tr><th>재무제표</th><th>샘플</th></tr>';
-    (data.tables||[]).slice(0,20).forEach(function(t){
-      var row=(t.rows||[]).find(function(x){return x.status!=='\\u2705\\uc77c\\uce58';}) || (t.rows||[])[0];
-      h+='<tr><td>'+esc(t.label)+'</td><td>'+esc(row?(row.item+' / '+row.status):'')+'</td></tr>';
-    });
-    h+='</table>'; return h;
-  }
-  function renderDiff(data){
-    var h='<h3>DSD Diff 요약</h3>';
-    var s=data.summary||{};
-    h+='<div class="kv"><b>변경</b><div>'+esc(s.changed_count)+'</div></div>';
-    h+='<div class="kv"><b>추가</b><div>'+esc(s.added_count)+'</div></div>';
-    h+='<div class="kv"><b>삭제</b><div>'+esc(s.removed_count)+'</div></div>';
-    h+='<hr><pre>'+esc(JSON.stringify(data,null,2))+'</pre>';
-    return h;
-  }
-
-  /* ── API 호출 함수들 ── */
-  function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v===null?d:v; }catch(_){ return d; } }
-  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(_){} }
-
-  function saveApiPrefs(){
-    var k=el('apiKey'), p=el('apiProvider'), m=el('apiModel'), b=el('apiBadge');
-    if(k) lsSet('easydsd_api_key', k.value);
-    if(p) lsSet('easydsd_provider', p.value);
-    if(m) lsSet('easydsd_model', m.value);
-    if(b&&k){ var on=k.value.trim().length>8; b.textContent=on?'\\uc124\\uc815\\ub428 \\u2713':'\\ubbf8\\uc124\\uc815'; b.className='badge'+(on?' ok':''); }
-  }
-
-  function tabSwitch(id, btn){
-    document.querySelectorAll('.pane').forEach(function(x){ x.classList.remove('on'); });
-    document.querySelectorAll('.tb').forEach(function(x){ x.classList.remove('on'); });
-    var pane=el(id); if(pane) pane.classList.add('on');
-    if(btn) btn.classList.add('on');
-  }
-
-  async function doPrecheckDsd(){
-    if(!F['1']){ alert('DSD \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    var fd=new FormData(); fd.append('dsd',F['1']);
-    try{
-      var r=await fetch('/api/precheck_dsd',{method:'POST',body:fd});
-      var data=await r.json();
-      show('r1',true); setHtml('r1box', r.ok?renderPrecheck(data):('\\u274c '+esc(data.error||'\\uc0ac\\uc804 \\uc810\\uac80 \\uc2e4\\ud328')));
-    }catch(e){ show('r1',true); setHtml('r1box','\\u274c '+esc(e.message)); }
-  }
-
-  async function doDsd2Excel(){
-    if(!F['1']){ alert('DSD \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy(1,true,'\\ubcc0\\ud658 \\uc911...');
-    try{
-      var fd=new FormData();
-      fd.append('dsd',F['1']);
-      fd.append('rollover',     el('optRollover')&&el('optRollover').checked?'1':'0');
-      fd.append('organize_notes', el('optNotes')&&el('optNotes').checked?'1':'0');
-      fd.append('period_change',  el('optPeriod')&&el('optPeriod').checked?'1':'0');
-      fd.append('year_offset',    (el('yearOffset')||{value:'1'}).value||'1');
-      fd.append('notes_per_sheet',(el('noteChunk')||{value:'5'}).value||'5');
-      fd.append('cur_period',     (el('curPeriod')||{value:''}).value||'');
-      fd.append('cur_year',       (el('curYear')||{value:''}).value||'');
-      fd.append('start_m',        (el('startM')||{value:''}).value||'');
-      fd.append('start_d',        (el('startD')||{value:''}).value||'');
-      fd.append('end_m',          (el('endM')||{value:''}).value||'');
-      fd.append('end_d',          (el('endD')||{value:''}).value||'');
-      var r=await fetch('/api/dsd2excel',{method:'POST',body:fd});
-      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\ubcc0\\ud658 \\uc2e4\\ud328'); }
-      var blob=await r.blob();
-      var info=JSON.parse(r.headers.get('X-Info')||'{}');
-      var url=URL.createObjectURL(blob);
-      var h='<h3>\\ubcc0\\ud658 \\uacb0\\uacfc \\uc694\\uc57d</h3>';
-      h+='<div class="kv"><b>\\uc0dd\\uc131 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.sheet_count!=null?info.sheet_count:'-')+'</div></div>';
-      h+='<div class="kv"><b>\\uc7ac\\ubb34 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.fin_sheet_count!=null?info.fin_sheet_count:'-')+'</div></div>';
-      h+='<div class="kv"><b>\\uc8fc\\uc11d \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.note_sheet_count!=null?info.note_sheet_count:'-')+'</div></div>';
-      h+='<div class="kv"><b>\\ub864\\uc624\\ubc84</b><div>'+(info.rollover?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
-      h+='<div class="kv"><b>\\uc8fc\\uc11d \\uc815\\ub9ac</b><div>'+(info.organize_notes?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
-      h+='<div class="kv"><b>\\uae30\\uc218/\\uc5f0\\ub3c4 \\ubc00\\uae30</b><div>'+(info.period_change?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
-      if(info.note_conflicts) h+='<div class="kv"><b>\\uc8fc\\uc11d \\ubc88\\ud638 \\uc911\\ubcf5</b><div>'+esc(info.note_conflicts.duplicates||0)+'\\uac74</div></div>';
-      h+='<a class="dl" download="\\uc791\\uc5c5\\uc591\\uc2dd.xlsx" href="'+url+'">\\ud83d\\udce5 Excel \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>';
-      show('r1',true); setHtml('r1box',h);
-    }catch(e){ show('r1',true); setHtml('r1box','\\u274c '+esc(e.message)); }
-    finally{ busy(1,false); }
-  }
-
-  async function doAiValidate(){
-    if(!F['2']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    var apiKey=el('apiKey'), apiProvider=el('apiProvider'), apiModel=el('apiModel');
-    if(!apiKey||!apiKey.value.trim()){ alert('AI \\uac80\\uc99d\\uc740 API Key \\uc785\\ub825 \\uc0ac\\uc6a9\\uc790\\ub9cc \\uc2e4\\ud589\\ud560 \\uc218 \\uc788\\uc2b5\\ub2c8\\ub2e4.'); return; }
-    busy(2,true,'AI \\uac80\\uc99d \\uc911...');
-    try{
-      var fd=new FormData();
-      fd.append('xlsx',F['2']); fd.append('api_key',apiKey.value.trim());
-      fd.append('provider',(apiProvider||{value:'gemini'}).value||'gemini');
-      fd.append('model',(apiModel||{value:''}).value||'');
-      var r=await fetch('/api/ai_validate',{method:'POST',body:fd});
-      var data=await r.json();
-      show('r2',true); setHtml('r2box', r.ok?renderAi(data):('\\u274c '+esc(data.error||'\\uac80\\uc99d \\uc2e4\\ud328')));
-    }catch(e){ show('r2',true); setHtml('r2box','\\u274c '+esc(e.message)); }
-    finally{ busy(2,false); }
-  }
-
-  async function doExcelPrecheck(){
-    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy('3a',true,'\\uc810\\uac80 \\uc911...'); busy('3b',true); busy(3,true);
-    try{
-      var fd=new FormData(); fd.append('xlsx',F['3']);
-      var r=await fetch('/api/precheck_excel',{method:'POST',body:fd});
-      var data=await r.json();
-      var h=r.ok?'<h3>\\uc5c5\\ub85c\\ub4dc \\uc0ac\\uc804 \\uc810\\uac80</h3>':'<h3>\\uc810\\uac80 \\uc2e4\\ud328</h3>';
-      if(r.ok){
-        h+='<div class="kv"><b>\\uc5c5\\ub85c\\ub4dc \\uac00\\ub2a5</b><div>'+(data.ok?'\\uc608':'\\uc544\\ub2c8\\uc624')+'</div></div>';
-        h+='<div class="kv"><b>\\ud3b8\\uc9d1 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(data.sheet_count)+'</div></div>';
-        h+='<div><b>\\uc774\\uc288</b><br>'+esc((data.issues||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div><br>';
-        h+='<div><b>\\ubcf5\\uad6c \\uac00\\ub2a5 \\ud56d\\ubaa9</b><br>'+esc((data.repairable||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div><br>';
-        h+='<div><b>\\uce58\\uba85 \\ud56d\\ubaa9</b><br>'+esc((data.fatal||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div>';
-      } else h+='\\u274c '+esc(data.error||'\\uc810\\uac80 \\uc2e4\\ud328');
-      show('r3',true); setHtml('r3box',h);
-    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
-    finally{ busy('3a',false); busy('3b',false); busy(3,false); }
-  }
-
-  async function doExcelRepair(){
-    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy('3a',true); busy('3b',true,'\\ubcf5\\uad6c\\ubcf8 \\uc0dd\\uc131 \\uc911...'); busy(3,true);
-    try{
-      var fd=new FormData(); fd.append('xlsx',F['3']);
-      var r=await fetch('/api/repair_excel',{method:'POST',body:fd});
-      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\ubcf5\\uad6c \\uc2e4\\ud328'); }
-      var blob=await r.blob();
-      var info=JSON.parse(r.headers.get('X-Info')||'{}');
-      var url=URL.createObjectURL(blob);
-      show('r3',true); setHtml('r3box','<h3>\\ubcf5\\uad6c\\ubcf8 \\uc0dd\\uc131 \\uc644\\ub8cc</h3><div>'+esc((info.actions||[]).join(' / ')||'\\uc801\\uc6a9 \\uac00\\ub2a5\\ud55c \\ubcf4\\uc218\\uc801 \\ubcf5\\uad6c\\ub9cc \\uc218\\ud589')+'</div><a class="dl" href="'+url+'" download="\\ubcf5\\uad6c\\ubcf8.xlsx">\\ud83d\\udce5 \\ubcf5\\uad6c\\ubcf8 \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>');
-    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
-    finally{ busy('3a',false); busy('3b',false); busy(3,false); }
-  }
-
-  async function doExcel2Dsd(){
-    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy(3,true,'\\uc7ac\\uc870\\ub9bd \\uc911...');
-    try{
-      var fd=new FormData(); fd.append('xlsx',F['3']);
-      var r=await fetch('/api/excel2dsd',{method:'POST',body:fd});
-      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\uc7ac\\uc870\\ub9bd \\uc2e4\\ud328'); }
-      var blob=await r.blob();
-      var url=URL.createObjectURL(blob);
-      var info=JSON.parse(r.headers.get('X-Info')||'{}');
-      show('r3',true); setHtml('r3box','<h3>DSD \\uc7ac\\uc870\\ub9bd \\uc644\\ub8cc</h3><div class="kv"><b>\\uc0c1\\ud0dc</b><div>'+esc(info.status||'ok')+'</div></div><a class="dl" href="'+url+'" download="\\uc870\\ub9bd\\uacb0\\uacfc.dsd">\\ud83d\\udce5 DSD \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>');
-    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
-    finally{ busy(3,false); }
-  }
-
-  async function doPrior(){
-    if(!(F['4p']&&F['4c'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy(4,true,'\\uc804\\uae30\\uae08\\uc561 \\ube44\\uad50 \\uc911...');
-    try{
-      var fd=new FormData(); fd.append('prev_dsd',F['4p']); fd.append('curr_dsd',F['4c']);
-      var r=await fetch('/api/verify_prior',{method:'POST',body:fd});
-      var data=await r.json();
-      show('r4',true); setHtml('r4box', r.ok?renderPrior(data):('\\u274c '+esc(data.error||'\\uac80\\uc99d \\uc2e4\\ud328')));
-    }catch(e){ show('r4',true); setHtml('r4box','\\u274c '+esc(e.message)); }
-    finally{ busy(4,false); }
-  }
-
-  async function doDiff(){
-    if(!(F['5b']&&F['5a'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    busy(5,true,'DSD \\ube44\\uad50 \\uc911...');
-    try{
-      var fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
-      var r=await fetch('/api/diff_dsd',{method:'POST',body:fd});
-      var data=await r.json();
-      show('r5',true); setHtml('r5box', r.ok?renderDiff(data):('\\u274c '+esc(data.error||'\\ube44\\uad50 \\uc2e4\\ud328')));
-    }catch(e){ show('r5',true); setHtml('r5box','\\u274c '+esc(e.message)); }
-    finally{ busy(5,false); }
-  }
-
-  async function doDownloadDiffXlsx(){
-    if(!(F['5b']&&F['5a'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
-    try{
-      var fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
-      var r=await fetch('/api/diff_dsd_xlsx',{method:'POST',body:fd});
-      if(!r.ok){ var e=await r.json(); alert(e.error||'\\ub2e4\\uc6b4\\ub85c\\ub4dc \\uc2e4\\ud328'); return; }
-      var blob=await r.blob();
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a'); a.href=url; a.download='DSD_Diff_Report.xlsx';
-      document.body.appendChild(a); a.click(); a.remove();
-    }catch(e){ alert(e.message); }
-  }
-
-  /* ── DOMContentLoaded: 이벤트 바인딩 ── */
-  document.addEventListener('DOMContentLoaded', function(){
-    /* 탭 버튼 */
-    document.querySelectorAll('.tabs .tb').forEach(function(btn, idx){
-      btn.addEventListener('click', function(){ tabSwitch('p'+(idx+1), btn); });
-    });
-
-    /* 드롭존 */
-    ['1','2','3','4p','4c','5b','5a'].forEach(bindDz);
-
-    /* 액션 버튼 */
-    var btnMap = {
-      'btn1':        doDsd2Excel,
-      'btn2':        doAiValidate,
-      'btn3':        doExcel2Dsd,
-      'btn3a':       doExcelPrecheck,
-      'btn3b':       doExcelRepair,
-      'btn4':        doPrior,
-      'btn5':        doDiff,
-      'btn5x':       doDownloadDiffXlsx,
-      'btnPrecheck': doPrecheckDsd
-    };
-    Object.keys(btnMap).forEach(function(id){
-      var e=el(id); if(e) e.addEventListener('click', btnMap[id]);
-    });
-
-    /* API 설정 복원 */
-    var ak=el('apiKey'), ap=el('apiProvider'), am=el('apiModel');
-    if(ak){ ak.value=lsGet('easydsd_api_key',''); ak.addEventListener('input', saveApiPrefs); }
-    if(ap){ ap.value=lsGet('easydsd_provider','gemini'); ap.addEventListener('change', saveApiPrefs); }
-    if(am){ am.value=lsGet('easydsd_model','gemini-1.5-flash'); am.addEventListener('change', saveApiPrefs); }
-    saveApiPrefs();
-    refreshPairBtns();
-  });
-})();
-</script>
-</body>
-</html>"""
-
-@app.route('/')
-def index():
-    return Response(HTML, mimetype='text/html; charset=utf-8')
-
-@app.route('/healthz')
-def healthz():
-    return jsonify({'status':'ok','service':'easydsd','version':'0.13'})
-
-@app.route('/api/precheck_dsd', methods=['POST'])
-def api_precheck_dsd():
     try:
-        if 'dsd' not in request.files:
-            return jsonify({'error':'dsd 파일이 필요합니다.'}), 400
-        return jsonify(precheck_dsd_bytes(request.files['dsd'].read()))
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'DSD 사전 점검')}), 400
+        json_str = base64.b64decode(req.export_code).decode('utf-8')
+        data = json.loads(json_str)
+    except Exception:
+        raise HTTPException(status_code=400, detail="유효하지 않은 내보내기 코드입니다.")
 
-@app.route('/api/precheck_excel', methods=['POST'])
-def api_precheck_excel():
-    try:
-        if 'xlsx' not in request.files:
-            return jsonify({'error':'xlsx 파일이 필요합니다.'}), 400
-        return jsonify(precheck_excel_bytes(request.files['xlsx'].read()))
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'Excel 사전 점검')}), 400
+    conn = get_db_connection()
+    c = conn.cursor()
 
-@app.route('/api/repair_excel', methods=['POST'])
-def api_repair_excel():
-    try:
-        if 'xlsx' not in request.files:
-            return jsonify({'error':'xlsx 파일이 필요합니다.'}), 400
-        fixed, actions = repair_excel_bytes_for_upload(request.files['xlsx'].read())
-        resp = send_file(io.BytesIO(fixed),
-                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True,
-                         download_name='복구본.xlsx')
-        resp.headers['X-Info'] = json.dumps({'actions': actions}, ensure_ascii=True)
-        return resp
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'Excel 복구본 생성')}), 400
+    if req.clear_existing:
+        c.execute("DELETE FROM flight WHERE room_id=%s", (room_id,))
+        c.execute("DELETE FROM accommodation WHERE room_id=%s", (room_id,))
+        c.execute("DELETE FROM comment WHERE schedule_id IN (SELECT id FROM schedule WHERE room_id=%s)", (room_id,))
+        c.execute("DELETE FROM schedule WHERE room_id=%s", (room_id,))
 
-@app.route('/api/dsd2excel', methods=['POST'])
-def api_dsd2excel():
-    try:
-        if 'dsd' not in request.files:
-            return jsonify({'error':'dsd 파일이 필요합니다.'}), 400
-        dsd_bytes = request.files['dsd'].read()
-        do_rollover = request.form.get('rollover','0') == '1'
-        organize_notes = request.form.get('organize_notes','0') == '1'
-        period_change = request.form.get('period_change','0') == '1'
-        year_offset = int(request.form.get('year_offset','1') or '1')
-        notes_per_sheet = int(request.form.get('notes_per_sheet','5') or '5')
-        cur_period = request.form.get('cur_period','').strip()
-        cur_year = request.form.get('cur_year','').strip()
-        start_m = request.form.get('start_m','').strip()
-        start_d = request.form.get('start_d','').strip()
-        end_m = request.form.get('end_m','').strip()
-        end_d = request.form.get('end_d','').strip()
+    for f in data.get("flights", []):
+        c.execute(
+            """INSERT INTO flight (room_id, flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (room_id, f.get("flight_type"), f.get("airport"), f.get("flight_num"), f.get("terminal"), f.get("departure_time"), f.get("arrival_time"), f.get("memo"))
+        )
 
-        pre = precheck_dsd_bytes(dsd_bytes)
-        xlsx = dsd_to_excel_bytes(dsd_bytes, do_period_change=False)
+    for a in data.get("accommodations", []):
+        days_str = ",".join(map(str, a.get("days_applied", [])))
+        c.execute(
+            """INSERT INTO accommodation (room_id, days_applied, hotel_name, google_map_url, has_breakfast, budget)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (room_id, days_str, a.get("hotel_name"), a.get("google_map_url"), a.get("has_breakfast"), a.get("budget"))
+        )
 
-        if do_rollover:
-            xlsx = _apply_rollover_smart_bytes(xlsx)
-        note_info = {'applied': False}
-        if organize_notes:
-            xlsx, note_info = regroup_note_sheets_bytes(xlsx, notes_per_sheet=notes_per_sheet)
-        if period_change:
-            xlsx = apply_period_change_only_bytes(
-                xlsx,
-                cur_period=int(cur_period) if cur_period else None,
-                cur_year=int(cur_year) if cur_year else None,
-                year_offset=year_offset,
-                start_m=int(start_m) if start_m else None,
-                start_d=int(start_d) if start_d else None,
-                end_m=int(end_m) if end_m else None,
-                end_d=int(end_d) if end_d else None,
+    for s in data.get("schedules", []):
+        c.execute(
+            """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (room_id, s.get("day_num"), s.get("start_time"), s.get("end_time"), s.get("content"), s.get("author", "방장"),
+             s.get("google_map_url", ""), s.get("tabelog_url", ""), s.get("budget"), s.get("place_id"),
+             s.get("latitude"), s.get("longitude"), s.get("rating"), s.get("sort_order", 0))
+        )
+
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# [패치 #1/#2/#3] LLM 기반 AI 자동 스케줄 (고도화)
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/ai_schedule", status_code=201)
+def generate_ai_schedule(
+    room_id: str,
+    req: AiScheduleRequest,
+    x_llm_api_key: Optional[str] = Header(None),
+    x_google_api_key: Optional[str] = Header(None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
+):
+    role, nickname = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    if not x_llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API 키(Gemini 키)가 헤더로 전달되지 않았습니다.")
+
+    # [패치 #1] 모델 선택
+    model_id = GEMINI_MODEL_MAP.get(req.model or "gemini-2.5-flash", "gemini-2.5-flash")
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={x_llm_api_key}"
+
+    # [패치 #3] 기존 일정 읽어서 프롬프트에 포함
+    existing_schedule_text = ""
+    if req.keep_existing:
+        conn_read = get_db_connection()
+        c_read = conn_read.cursor()
+        c_read.execute(
+            "SELECT day_num, start_time, end_time, content FROM schedule WHERE room_id=%s ORDER BY day_num, sort_order, start_time",
+            (room_id,)
+        )
+        existing_rows = c_read.fetchall()
+        c_read.close()
+        conn_read.close()
+
+        if existing_rows:
+            lines = [f"  - {row[0]}일차 {row[1]}~{row[2]}: {row[3]}" for row in existing_rows]
+            existing_schedule_text = (
+                "\n\n[현재 등록된 기존 일정 - 절대 수정/삭제 불가]\n"
+                + "\n".join(lines)
+                + "\n\n위 기존 일정들의 시간대와 절대 겹치지 않도록, 빈 시간대만 새로운 일정으로 채워주세요."
             )
 
-        wb = openpyxl.load_workbook(io.BytesIO(xlsx), data_only=False)
-        vis = [sn for sn in wb.sheetnames if sn not in ('📋사용안내','_원본XML','_원본DSD_바이너리','🤖AI검증결과')]
-        fin_sheets = [sn for sn in vis if sn.startswith(FIN_PREFIXES)]
-        note_sheets = [sn for sn in vis if sn.startswith('📝')]
-        resp = send_file(io.BytesIO(xlsx),
-                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name='작업양식.xlsx')
-        resp.headers['X-Info'] = json.dumps({
-            'sheet_count': len(vis),
-            'fin_sheet_count': len(fin_sheets),
-            'note_sheet_count': len(note_sheets),
-            'rollover': do_rollover,
-            'organize_notes': organize_notes,
-            'period_change': period_change,
-            'note_conflicts': {'duplicates': len(pre['note_conflicts']['duplicates']), 'missing_numbers': pre['note_conflicts']['missing_numbers'][:20]},
-        }, ensure_ascii=True)
-        return resp
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'DSD→Excel 변환')}), 400
+    feedback_text = f"\n\n[사용자 추가 요청사항]: {req.feedback}" if req.feedback and req.feedback.strip() else ""
 
-@app.route('/api/excel2dsd', methods=['POST'])
-def api_excel2dsd():
+    prompt = f"""당신은 10년차 전문 여행 플래너입니다. 사용자가 방문하는 목적지/도시는 '{req.city}'이며, 총 여행 기간은 {req.days}일입니다.
+{existing_schedule_text}{feedback_text}
+
+매일 아침 09:00부터 저녁 시간대까지 식사, 유명 관광지, 적절한 휴식을 배분하여 현지 상황에 맞는 최적의 동선 일정표를 짜주세요.
+각 일정의 'content' 필드에는 구글맵에서 검색 가능한 정확한 장소명(상호명)을 반드시 포함해야 합니다.
+**가장 중요한 제약사항:** 반드시 마크다운(예: ```json 등) 없이 순수한 JSON 배열 포맷으로만 응답을 시작하고 끝내세요.
+
+배열 내 각 JSON 객체는 아래 5개 필드만 포함:
+- "day_num": 정수 (1 부터 {req.days} 까지)
+- "start_time": "HH:MM" 형태
+- "end_time": "HH:MM" 형태
+- "content": 구체적 장소명(검색 가능한 정확한 상호명 포함) + 짧은 설명
+- "budget": 현지 화폐 단위 숫자 (모르면 0)"""
+
     try:
-        if 'xlsx' not in request.files:
-            return jsonify({'error':'xlsx 파일이 필요합니다.'}), 400
-        xlsx_bytes = request.files['xlsx'].read()
-        chk = precheck_excel_bytes(xlsx_bytes)
-        if not chk.get('ok'):
-            return jsonify({'error':'재조립 전에 해결해야 할 치명 항목이 있습니다: ' + ' / '.join(chk.get('fatal',[]))}), 400
-        dsd = excel_to_dsd_bytes(xlsx_bytes)
-        resp = send_file(io.BytesIO(dsd), mimetype='application/octet-stream',
-                         as_attachment=True, download_name='조립결과.dsd')
-        resp.headers['X-Info'] = json.dumps({'status':'ok'}, ensure_ascii=True)
-        return resp
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'Excel→DSD 재조립')}), 400
+        res = requests.post(
+            api_url,
+            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.5}},
+            timeout=60
+        )
 
-@app.route('/api/ai_validate', methods=['POST'])
-def api_ai_validate():
+        if not res.ok:
+            raise Exception(f"Gemini API 호출 실패: {res.status_code} - {res.text[:200]}")
+
+        resp_json = res.json()
+        text_content = resp_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+        text_content = re.sub(r"^```(json)?\n?|```$", "", text_content, flags=re.IGNORECASE).strip()
+        ai_data = json.loads(text_content)
+
+        conn = get_db_connection()
+        c = conn.cursor()
+
+        inserted_count = 0
+        for item in ai_data:
+            content_text = item.get("content", "자동 생성된 추천 일정")
+            day = item.get("day_num", 1)
+
+            # [패치 #2] content에서 장소명 추출하여 구글 Places API 호출
+            place_info = None
+            if x_google_api_key:
+                place_info = get_google_place_info_by_name(content_text, x_google_api_key)
+
+            map_url = place_info["map_url"] if place_info and place_info.get("map_url") else ""
+            lat     = place_info["lat"]     if place_info else None
+            lng     = place_info["lng"]     if place_info else None
+            rating  = place_info["rating"]  if place_info else None
+            place_id = place_info["place_id"] if place_info else None
+
+            c.execute(
+                """INSERT INTO schedule
+                       (room_id, day_num, start_time, end_time, content, author, google_map_url,
+                        budget, place_id, latitude, longitude, rating, sort_order)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
+                (room_id, day, item.get("start_time", "09:00"), item.get("end_time", "10:00"),
+                 content_text, "🤖 AI", map_url, item.get("budget", 0),
+                 place_id, lat, lng, rating, room_id, day)
+            )
+            inserted_count += 1
+
+        conn.commit()
+        c.close()
+        conn.close()
+
+        return {"status": "ok", "generated_count": inserted_count}
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="AI가 정해진 규칙(순수 JSON)대로 응답하지 못했습니다. 다시 시도해주세요.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 스케줄 생성 중 오류 발생: {str(e)}")
+
+# ─────────────────────────────────────────────
+# 항공편 API
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/flight", status_code=201)
+def add_flight(room_id: str, fl: FlightCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO flight (room_id, flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (room_id, fl.flight_type, fl.airport, fl.flight_num, fl.terminal, fl.departure_time, fl.arrival_time, fl.memo)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/flight/{flight_id}")
+def delete_flight(room_id: str, flight_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM flight WHERE id=%s AND room_id=%s", (flight_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# 숙박 API
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/accommodation", status_code=201)
+def add_accommodation(room_id: str, acc: AccommodationCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    days_str = ",".join(map(str, sorted(acc.days_applied)))
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO accommodation (room_id, days_applied, hotel_name, google_map_url, has_breakfast, budget)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (room_id, days_str, acc.hotel_name, acc.google_map_url, acc.has_breakfast, acc.budget)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/accommodation/{acc_id}")
+def delete_accommodation(room_id: str, acc_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM accommodation WHERE id=%s AND room_id=%s", (acc_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# 일정 추가 / 삭제 / 수정 API
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/schedule", status_code=201)
+def add_schedule(room_id: str, sch: ScheduleCreate, x_google_api_key: Optional[str] = Header(None), credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, nickname = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    g = get_google_place_info(sch.google_map_url, x_google_api_key)
+    final_content = f"{g['name']} ({sch.content})" if (g and g.get("name")) else sch.content
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+               (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
+        (room_id, sch.day_num, sch.start_time, sch.end_time, final_content, nickname,
+         sch.google_map_url, sch.tabelog_url, sch.budget,
+         g['place_id'] if g else None, g['lat'] if g else None, g['lng'] if g else None, g['rating'] if g else None,
+         room_id, sch.day_num)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/schedule/{sch_id}")
+def delete_schedule(room_id: str, sch_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM comment WHERE schedule_id=%s", (sch_id,))
+    c.execute("DELETE FROM schedule WHERE id=%s AND room_id=%s", (sch_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# [패치 #8] 일정 수정 PATCH API
+@app.patch("/room/{room_id}/schedule/{sch_id}")
+def update_schedule(
+    room_id: str,
+    sch_id: int,
+    req: ScheduleUpdate,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
+):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="방장 또는 동행자 권한이 필요합니다.")
+
+    fields = []
+    values = []
+
+    if req.day_num is not None:       fields.append("day_num=%s");      values.append(req.day_num)
+    if req.start_time is not None:    fields.append("start_time=%s");   values.append(req.start_time)
+    if req.end_time is not None:      fields.append("end_time=%s");     values.append(req.end_time)
+    if req.content is not None:       fields.append("content=%s");      values.append(req.content)
+    if req.google_map_url is not None: fields.append("google_map_url=%s"); values.append(req.google_map_url)
+    if req.tabelog_url is not None:   fields.append("tabelog_url=%s");  values.append(req.tabelog_url)
+    if req.budget is not None:        fields.append("budget=%s");       values.append(req.budget)
+
+    if not fields:
+        return {"status": "no_changes"}
+
+    values.extend([sch_id, room_id])
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(f"UPDATE schedule SET {', '.join(fields)} WHERE id=%s AND room_id=%s", values)
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/room/{room_id}/reorder")
+def reorder_schedule(room_id: str, req: ReorderRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403)
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    for idx, sch_id in enumerate(req.new_order):
+        c.execute("UPDATE schedule SET sort_order=%s WHERE id=%s AND room_id=%s", (idx, sch_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# 훈수(추천) 및 댓글 관리 API
+# ─────────────────────────────────────────────
+@app.post("/room/{room_id}/suggestion", status_code=201)
+def add_suggestion(room_id: str, sug: SuggestionCreate):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO suggestion (room_id, suggester_name, content, google_map_url, tabelog_url) VALUES (%s, %s, %s, %s, %s)",
+        (room_id, f"훈수꾼 {sug.suggester_name[:4]}", sug.content, sug.google_map_url, sug.tabelog_url)
+    )
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/room/{room_id}/suggestion/{sug_id}/vote")
+def vote_suggestion(room_id: str, sug_id: int, type: str):
+    column = "good_cnt" if type == "good" else "bad_cnt"
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(f"UPDATE suggestion SET {column} = {column} + 1 WHERE id=%s AND room_id=%s", (sug_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/room/{room_id}/suggestion/{sug_id}/approve")
+def approve_suggestion(room_id: str, sug_id: int, req: ApproveRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, nickname = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403)
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT content, google_map_url, tabelog_url FROM suggestion WHERE id=%s AND room_id=%s", (sug_id, room_id))
+    row = c.fetchone()
+    if row:
+        c.execute(
+            """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, sort_order)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
+            (room_id, req.day_num, req.start_time, req.end_time, row[0], nickname, row[1], row[2], room_id, req.day_num)
+        )
+        c.execute("UPDATE suggestion SET status='승인됨' WHERE id=%s", (sug_id,))
+        conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/suggestion/{sug_id}")
+def delete_suggestion(room_id: str, sug_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403)
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM suggestion WHERE id=%s AND room_id=%s", (sug_id, room_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.post("/room/{room_id}/schedule/{sch_id}/comment", status_code=201)
+def add_comment(room_id: str, sch_id: int, cm: CommentCreate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, nickname = get_current_user_info(room_id, credentials)
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("SELECT is_comment_enabled FROM room WHERE room_id=%s", (room_id,))
+    row = c.fetchone()
+    if not row or not row[0]:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=403, detail="댓글 기능 비활성")
+
+    writer_name = nickname if role in ("admin", "team") else f"훈수꾼 {cm.writer_name[:4]}"
+    c.execute("INSERT INTO comment (schedule_id, writer_name, content) VALUES (%s, %s, %s)", (sch_id, writer_name, cm.content))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/room/{room_id}/schedule/{sch_id}/comment/{comment_id}")
+def delete_comment(room_id: str, sch_id: int, comment_id: int, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role != "admin":
+        raise HTTPException(status_code=403)
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM comment WHERE id=%s AND schedule_id=%s", (comment_id, sch_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# Google API (GPS 주변 검색 / 이동시간 / 장소명 텍스트 검색)
+# ─────────────────────────────────────────────
+@app.get("/api/nearby")
+def get_nearby(lat: float, lng: float, type: str, x_google_api_key: Optional[str] = Header(None)):
+    if not x_google_api_key:
+        return {"results": []}
+
+    keywords = {
+        "restaurant": "restaurant",
+        "smoking": "smoking area|smoking allowed cafe",
+        "convenience": "convenience_store"
+    }
+    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius=1000&keyword={keywords.get(type)}&key={x_google_api_key}&language=ko"
+    res = requests.get(url).json().get("results", [])
+
+    if type == "restaurant":
+        res = [r for r in res if r.get("rating", 0) >= 4.0][:3]
+        for r in res:
+            r["ai_desc"] = f"현지 평점 {r.get('rating')}점 맛집입니다. 실패 없는 선택!"
+    else:
+        res = res[:3]
+
+    return {"results": res}
+
+@app.get("/api/travel_time")
+def get_travel_time(origin: str, dest: str, x_google_api_key: Optional[str] = Header(None)):
+    if not x_google_api_key:
+        return {"duration": None}
+
+    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins=place_id:{origin}&destinations=place_id:{dest}&mode=transit&key={x_google_api_key}&language=ko"
+    res = requests.get(url).json()
+
     try:
-        if 'xlsx' not in request.files:
-            return jsonify({'error':'xlsx 파일이 필요합니다.'}), 400
-        provider = request.form.get('provider','gemini').strip()
-        api_key = request.form.get('api_key','').strip()
-        model = request.form.get('model','').strip()
-        if not api_key:
-            return jsonify({'error':'AI 검증은 API Key 입력 사용자만 사용할 수 있습니다.'}), 400
-        summary = analyze_excel_financials(request.files['xlsx'].read())
-        ai_text = run_ai_validation(summary, provider, api_key, model)
-        return jsonify({
-            'python_validation': summary,
-            'ai_validation': ai_text,
-            'provider': provider,
-            'model': model
-        })
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'AI 검증')}), 400
+        element = res['rows'][0]['elements'][0]
+        return {"duration": element['duration']['text'], "distance": element['distance']['text']}
+    except Exception:
+        return {"duration": None}
 
-@app.route('/api/verify_prior', methods=['POST'])
-def api_verify_prior():
+# [패치 #5] 장소명 텍스트 검색 API (수동 일정 추가 시 자동완성용)
+@app.get("/api/place_text_search")
+def place_text_search(query: str, x_google_api_key: Optional[str] = Header(None)):
+    if not x_google_api_key or not query:
+        return {"results": []}
     try:
-        if 'prev_dsd' not in request.files or 'curr_dsd' not in request.files:
-            return jsonify({'error':'prev_dsd, curr_dsd 파일이 필요합니다.'}), 400
-        return jsonify(verify_prior_period(request.files['prev_dsd'].read(), request.files['curr_dsd'].read()))
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, '전기금액 검증')}), 400
+        res = requests.get(
+            f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={requests.utils.quote(query)}&key={x_google_api_key}&language=ko",
+            timeout=5
+        ).json()
 
-@app.route('/api/diff_dsd', methods=['POST'])
-def api_diff_dsd():
-    try:
-        if 'before_dsd' not in request.files or 'after_dsd' not in request.files:
-            return jsonify({'error':'before_dsd, after_dsd 파일이 필요합니다.'}), 400
-        return jsonify(compare_dsd_files(request.files['before_dsd'].read(), request.files['after_dsd'].read()))
+        results = []
+        for place in res.get("results", [])[:5]:
+            pid = place.get("place_id", "")
+            results.append({
+                "name": place.get("name", ""),
+                "address": place.get("formatted_address", ""),
+                "rating": place.get("rating"),
+                "place_id": pid,
+                "map_url": f"https://www.google.com/maps/place/?q=place_id:{pid}" if pid else ""
+            })
+        return {"results": results}
     except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'DSD 비교분석')}), 400
+        return {"results": [], "error": str(e)}
 
-@app.route('/api/diff_dsd_xlsx', methods=['POST'])
-def api_diff_dsd_xlsx():
-    try:
-        if 'before_dsd' not in request.files or 'after_dsd' not in request.files:
-            return jsonify({'error':'before_dsd, after_dsd 파일이 필요합니다.'}), 400
-        result = compare_dsd_files(request.files['before_dsd'].read(), request.files['after_dsd'].read())
-        out = build_diff_report_xlsx(result)
-        return send_file(io.BytesIO(out),
-                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True,
-                         download_name='DSD_Diff_Report.xlsx')
-    except Exception as e:
-        return jsonify({'error': friendly_error_message(e, 'Diff 리포트 생성')}), 400
+# ─────────────────────────────────────────────
+# 정산 및 예산 로직
+# ─────────────────────────────────────────────
+@app.get("/room/{room_id}/budget_summary")
+def budget_summary(room_id: str, exchange_rate: Optional[float] = None):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT member_count, currency FROM room WHERE room_id=%s", (room_id,))
+    room_row = c.fetchone()
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    print(f"EasyDSD v0.13 서버 시작: http://localhost:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    if not room_row:
+        c.close()
+        conn.close()
+        return {}
+
+    c.execute("SELECT COALESCE(SUM(budget), 0) FROM schedule WHERE room_id=%s", (room_id,))
+    total_sch_budget = int(c.fetchone()[0])
+
+    c.execute("SELECT COALESCE(SUM(budget), 0) FROM accommodation WHERE room_id=%s", (room_id,))
+    total_acc_budget = int(c.fetchone()[0])
+
+    total_local = total_sch_budget + total_acc_budget
+    per_person_local = total_local // room_row[0] if room_row[0] else 0
+    per_person_krw = round(per_person_local / exchange_rate * 1000) if exchange_rate and exchange_rate > 0 else None
+
+    c.close()
+    conn.close()
+
+    return {
+        "currency": room_row[1],
+        "currency_symbol": CURRENCY_SYMBOL_MAP.get(room_row[1], ""),
+        "member_count": room_row[0],
+        "total_local": total_local,
+        "per_person_local": per_person_local,
+        "per_person_krw": per_person_krw,
+        "exchange_rate_per_1000krw": exchange_rate
+    }
