@@ -1269,12 +1269,12 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
 
 <div class=\"wrap\">
   <div class=\"tabs\">
-    <button class=\"tb on\" onclick=\"sw('p1',this)\">① DSD→Excel</button>
-    <button class=\"tb\" onclick=\"sw('p2',this)\">② AI 검증</button>
-    <button class=\"tb\" onclick=\"sw('p3',this)\">③ Excel→DSD</button>
-    <button class=\"tb\" onclick=\"sw('p4',this)\">④ 전기금액 검증</button>
-    <button class=\"tb\" onclick=\"sw('p5',this)\">⑤ DSD 비교분석</button>
-    <button class=\"tb\" onclick=\"sw('p6',this)\">⑥ 개발자 정보</button>
+    <button class=\"tb on\">① DSD→Excel</button>
+    <button class=\"tb\">② AI 검증</button>
+    <button class=\"tb\">③ Excel→DSD</button>
+    <button class=\"tb\">④ 전기금액 검증</button>
+    <button class=\"tb\">⑤ DSD 비교분석</button>
+    <button class=\"tb\">⑥ 개발자 정보</button>
   </div>
 
   <div id=\"p1\" class=\"pane on\">
@@ -1282,8 +1282,8 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
       <strong>⚠ 행 추가 시 [복사된 셀 삽입] 필수</strong>
       <p>핵심 엔진이 행 추가/삭제를 반영하려면 기존 행을 복사한 뒤 <b>복사된 셀 삽입</b>으로 작업해야 합니다.</p>
     </div>
-    <div class=\"dz\" id=\"dz1\" onclick=\"pick('f1')\"><div class=\"ico\">📁</div><div id=\"dt1\">DSD 파일을 선택하세요</div></div>
-    <input id=\"f1\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\" onchange=\"loadFile('1')\">
+    <div class=\"dz\" id=\"dz1\"><div class=\"ico\">📁</div><div id=\"dt1\">DSD 파일을 선택하세요</div></div>
+    <input id=\"f1\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
 
     <div class=\"opt\">
       <label><input type=\"checkbox\" id=\"optRollover\"> <div><b>전기로 밀기(롤오버)</b><br><small>당기 숫자를 전기 칸으로 밀고 당기 칸을 000으로 채웁니다.</small></div></label>
@@ -1302,10 +1302,10 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
       <div class=\"grid3\" style=\"margin-top:8px\">
         <div><small>종료월(선택)</small><br><input type=\"number\" id=\"endM\" min=\"1\" max=\"12\"></div>
         <div><small>종료일(선택)</small><br><input type=\"number\" id=\"endD\" min=\"1\" max=\"31\"></div>
-        <div><small>변환 전 점검</small><br><button type=\"button\" id=\"btnPrecheck\" class=\"btn b6\" style=\"margin-top:0;padding:10px\" onclick=\"precheckDsd()\">사전 점검</button></div>
+        <div><small>변환 전 점검</small><br><button type=\"button\" id=\"btnPrecheck\" class=\"btn b6\" style=\"margin-top:0;padding:10px\">사전 점검</button></div>
       </div>
     </div>
-    <button class=\"btn b1\" id=\"btn1\" onclick=\"runDsd2Excel()\" disabled>📊 Excel 파일 생성</button>
+    <button class=\"btn b1\" id=\"btn1\" disabled>📊 Excel 파일 생성</button>
     <div id=\"sp1\" class=\"spin\">변환 중...</div>
     <div id=\"r1\" class=\"res\"><div id=\"r1box\" class=\"box\"></div></div>
   </div>
@@ -1315,9 +1315,9 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
       <strong>🤖 AI 검증 탭은 API Key 입력 사용자만 실행</strong>
       <p>여기서 대차평균, 합계/총계 행 존재 여부, 자릿수 편차를 Python으로 계산한 뒤 AI 해설을 붙입니다. 합계/총계 관련 검증도 이 탭에서만 수행합니다.</p>
     </div>
-    <div class=\"dz\" id=\"dz2\" onclick=\"pick('f2')\"><div class=\"ico\">🤖</div><div id=\"dt2\">검증할 Excel(.xlsx) 파일</div></div>
-    <input id=\"f2\" type=\"file\" accept=\".xlsx\" style=\"display:none\" onchange=\"loadFile('2')\">
-    <button class=\"btn b2\" id=\"btn2\" onclick=\"runAiValidate()\" disabled>🤖 AI 검증 실행</button>
+    <div class=\"dz\" id=\"dz2\"><div class=\"ico\">🤖</div><div id=\"dt2\">검증할 Excel(.xlsx) 파일</div></div>
+    <input id=\"f2\" type=\"file\" accept=\".xlsx\" style=\"display:none\">
+    <button class=\"btn b2\" id=\"btn2\" disabled>🤖 AI 검증 실행</button>
     <div id=\"sp2\" class=\"spin\">AI 검증 중...</div>
     <div id=\"r2\" class=\"res\"><div id=\"r2box\" class=\"box\"></div></div>
   </div>
@@ -1327,13 +1327,13 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
       <strong>⚠ 핵심 재조립 전 사전 점검 권장</strong>
       <p>업로드 가능 여부를 먼저 점검하고, 복구 가능한 항목은 별도 복구본을 내려받아 다시 시도할 수 있습니다.</p>
     </div>
-    <div class=\"dz\" id=\"dz3\" onclick=\"pick('f3')\"><div class=\"ico\">📄</div><div id=\"dt3\">수정된 Excel(.xlsx) 파일</div></div>
-    <input id=\"f3\" type=\"file\" accept=\".xlsx\" style=\"display:none\" onchange=\"loadFile('3')\">
+    <div class=\"dz\" id=\"dz3\"><div class=\"ico\">📄</div><div id=\"dt3\">수정된 Excel(.xlsx) 파일</div></div>
+    <input id=\"f3\" type=\"file\" accept=\".xlsx\" style=\"display:none\">
     <div class=\"grid2\">
-      <button class=\"btn b6\" id=\"btn3a\" onclick=\"runExcelPrecheck()\" disabled>🩺 업로드 가능 여부 점검</button>
-      <button class=\"btn b6\" id=\"btn3b\" onclick=\"runExcelRepair()\" disabled>🛠 복구본 생성</button>
+      <button class=\"btn b6\" id=\"btn3a\" disabled>🩺 업로드 가능 여부 점검</button>
+      <button class=\"btn b6\" id=\"btn3b\" disabled>🛠 복구본 생성</button>
     </div>
-    <button class=\"btn b3\" id=\"btn3\" onclick=\"runExcel2Dsd()\" disabled>🔧 DSD 파일 재조립</button>
+    <button class=\"btn b3\" id=\"btn3\" disabled>🔧 DSD 파일 재조립</button>
     <div id=\"sp3\" class=\"spin\">재조립 중...</div>
     <div id=\"r3\" class=\"res\"><div id=\"r3box\" class=\"box\"></div></div>
   </div>
@@ -1345,15 +1345,15 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
     </div>
     <div class=\"grid2\">
       <div>
-        <div class=\"dz\" id=\"dz4p\" onclick=\"pick('f4p')\"><div class=\"ico\">📁</div><div id=\"dt4p\">작년 DSD</div></div>
-        <input id=\"f4p\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\" onchange=\"loadFile('4p')\">
+        <div class=\"dz\" id=\"dz4p\"><div class=\"ico\">📁</div><div id=\"dt4p\">작년 DSD</div></div>
+        <input id=\"f4p\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
       </div>
       <div>
-        <div class=\"dz\" id=\"dz4c\" onclick=\"pick('f4c')\"><div class=\"ico\">📁</div><div id=\"dt4c\">올해 DSD</div></div>
-        <input id=\"f4c\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\" onchange=\"loadFile('4c')\">
+        <div class=\"dz\" id=\"dz4c\"><div class=\"ico\">📁</div><div id=\"dt4c\">올해 DSD</div></div>
+        <input id=\"f4c\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
       </div>
     </div>
-    <button class=\"btn b4\" id=\"btn4\" onclick=\"runPrior()\" disabled>🔍 전기금액 검증</button>
+    <button class=\"btn b4\" id=\"btn4\" disabled>🔍 전기금액 검증</button>
     <div id=\"sp4\" class=\"spin\">비교 중...</div>
     <div id=\"r4\" class=\"res\"><div id=\"r4box\" class=\"box\"></div></div>
   </div>
@@ -1365,17 +1365,17 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
     </div>
     <div class=\"grid2\">
       <div>
-        <div class=\"dz\" id=\"dz5b\" onclick=\"pick('f5b')\"><div class=\"ico\">📁</div><div id=\"dt5b\">수정 전 DSD</div></div>
-        <input id=\"f5b\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\" onchange=\"loadFile('5b')\">
+        <div class=\"dz\" id=\"dz5b\"><div class=\"ico\">📁</div><div id=\"dt5b\">수정 전 DSD</div></div>
+        <input id=\"f5b\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
       </div>
       <div>
-        <div class=\"dz\" id=\"dz5a\" onclick=\"pick('f5a')\"><div class=\"ico\">📁</div><div id=\"dt5a\">수정 후 DSD</div></div>
-        <input id=\"f5a\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\" onchange=\"loadFile('5a')\">
+        <div class=\"dz\" id=\"dz5a\"><div class=\"ico\">📁</div><div id=\"dt5a\">수정 후 DSD</div></div>
+        <input id=\"f5a\" type=\"file\" accept=\".dsd,.zip\" style=\"display:none\">
       </div>
     </div>
     <div class=\"grid2\">
-      <button class=\"btn b5\" id=\"btn5\" onclick=\"runDiff()\" disabled>🔎 JSON 비교 보기</button>
-      <button class=\"btn b6\" id=\"btn5x\" onclick=\"downloadDiffXlsx()\" disabled>📥 Diff 리포트 다운로드</button>
+      <button class=\"btn b5\" id=\"btn5\" disabled>🔎 JSON 비교 보기</button>
+      <button class=\"btn b6\" id=\"btn5x\" disabled>📥 Diff 리포트 다운로드</button>
     </div>
     <div id=\"sp5\" class=\"spin\">비교 중...</div>
     <div id=\"r5\" class=\"res\"><div id=\"r5box\" class=\"box\"></div></div>
@@ -1417,299 +1417,315 @@ ul.clean{margin:8px 0 0 18px;padding:0} ul.clean li{margin:6px 0}
 <script>
 (function(){
   'use strict';
-  const $ = (id) => document.getElementById(id);
   const F = {};
   const DZ = {
-    '1': {inp:'f1', txt:'dt1', dz:'dz1', btns:['btn1']},
-    '2': {inp:'f2', txt:'dt2', dz:'dz2', btns:['btn2']},
-    '3': {inp:'f3', txt:'dt3', dz:'dz3', btns:['btn3','btn3a','btn3b']},
-    '4p':{inp:'f4p',txt:'dt4p',dz:'dz4p',btns:[]},
-    '4c':{inp:'f4c',txt:'dt4c',dz:'dz4c',btns:[]},
-    '5b':{inp:'f5b',txt:'dt5b',dz:'dz5b',btns:[]},
-    '5a':{inp:'f5a',txt:'dt5a',dz:'dz5a',btns:[]}
+    '1':  {inp:'f1',  txt:'dt1',  dz:'dz1',  btns:['btn1']},
+    '2':  {inp:'f2',  txt:'dt2',  dz:'dz2',  btns:['btn2']},
+    '3':  {inp:'f3',  txt:'dt3',  dz:'dz3',  btns:['btn3','btn3a','btn3b']},
+    '4p': {inp:'f4p', txt:'dt4p', dz:'dz4p', btns:[]},
+    '4c': {inp:'f4c', txt:'dt4c', dz:'dz4c', btns:[]},
+    '5b': {inp:'f5b', txt:'dt5b', dz:'dz5b', btns:[]},
+    '5a': {inp:'f5a', txt:'dt5a', dz:'dz5a', btns:[]}
   };
 
-  function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function byIdOrNull(id){ return document.getElementById(id); }
-  function setText(id, text){ const el=byIdOrNull(id); if(el) el.textContent=text; }
-  function setHtml(id, html){ const el=byIdOrNull(id); if(el) el.innerHTML=html; }
-  function show(id, on=true){ const el=byIdOrNull(id); if(el) el.style.display = on ? 'block' : 'none'; }
-  function toggleDisabled(id, on){ const el=byIdOrNull(id); if(el) el.disabled = !!on; }
-  function getResultBox(n){ return {wrap: byIdOrNull('r'+n), box: byIdOrNull('r'+n+'box') || byIdOrNull('r'+n)}; }
+  function el(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function setText(id,t){ const e=el(id); if(e) e.textContent=t; }
+  function setHtml(id,h){ const e=el(id); if(e) e.innerHTML=h; }
+  function show(id,on){ const e=el(id); if(e) e.style.display=on?'block':'none'; }
+  function dis(id,on){ const e=el(id); if(e) e.disabled=!!on; }
 
-  function refreshPairButtons(){
-    toggleDisabled('btn4', !(F['4p'] && F['4c']));
-    const diffReady = !!(F['5b'] && F['5a']);
-    toggleDisabled('btn5', !diffReady);
-    toggleDisabled('btn5x', !diffReady);
+  function refreshPairBtns(){
+    dis('btn4', !(F['4p']&&F['4c']));
+    var ok=!!(F['5b']&&F['5a']);
+    dis('btn5',!ok); dis('btn5x',!ok);
   }
 
-  function loadFile(key, files){
-    const cfg = DZ[key];
-    if(!cfg || !files || !files[0]) return;
-    F[key] = files[0];
-    setText(cfg.txt, '✅ ' + F[key].name);
-    const dz = byIdOrNull(cfg.dz);
-    if(dz) dz.classList.add('ok');
-    (cfg.btns || []).forEach(id => toggleDisabled(id, false));
-    refreshPairButtons();
+  function fileLoaded(key, files){
+    var cfg=DZ[key];
+    if(!cfg||!files||!files[0]) return;
+    F[key]=files[0];
+    setText(cfg.txt, '\\u2705 '+F[key].name);
+    var dz=el(cfg.dz); if(dz) dz.classList.add('ok');
+    (cfg.btns||[]).forEach(function(id){ dis(id,false); });
+    refreshPairBtns();
   }
 
-  function bindDropzone(key){
-    const cfg = DZ[key];
-    const dz = byIdOrNull(cfg.dz), inp = byIdOrNull(cfg.inp);
-    if(!dz || !inp) return;
-    dz.addEventListener('click', (e)=>{
-      if(e.target && e.target.closest('input,button,a,label,select,option,textarea')) return;
+  function bindDz(key){
+    var cfg=DZ[key];
+    var dz=el(cfg.dz), inp=el(cfg.inp);
+    if(!dz||!inp) return;
+    dz.addEventListener('click', function(e){
+      if(e.target && e.target.closest('input,button,a,label,select,textarea')) return;
       inp.click();
     });
-    inp.addEventListener('change', ()=>loadFile(key, inp.files));
-    ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); dz.classList.add('drag'); }));
-    ['dragleave','dragend'].forEach(ev => dz.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); dz.classList.remove('drag'); }));
-    dz.addEventListener('drop', (e)=>{
-      e.preventDefault(); e.stopPropagation(); dz.classList.remove('drag');
-      const files = e.dataTransfer && e.dataTransfer.files;
-      if(!files || !files.length) return;
-      try {
-        const dt = new DataTransfer();
-        dt.items.add(files[0]);
-        inp.files = dt.files;
-      } catch(_e) {}
-      loadFile(key, files);
+    inp.addEventListener('change', function(){ fileLoaded(key, inp.files); });
+    dz.addEventListener('dragenter', function(e){ e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragover',  function(e){ e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', function(e){ e.preventDefault(); dz.classList.remove('drag'); });
+    dz.addEventListener('dragend',   function(e){ e.preventDefault(); dz.classList.remove('drag'); });
+    dz.addEventListener('drop', function(e){
+      e.preventDefault(); dz.classList.remove('drag');
+      var files=e.dataTransfer&&e.dataTransfer.files;
+      if(!files||!files.length) return;
+      try{ var dt=new DataTransfer(); dt.items.add(files[0]); inp.files=dt.files; }catch(_){}
+      fileLoaded(key, files);
     });
   }
 
-  function setBusy(n,on,msg){
-    const sp = byIdOrNull('sp'+n);
-    if(sp){
-      sp.classList[on?'add':'remove']('on');
-      if(msg) sp.textContent = msg;
-    }
-    toggleDisabled('btn'+n, on);
+  function busy(n,on,msg){
+    var sp=el('sp'+n);
+    if(sp){ sp.classList[on?'add':'remove']('on'); if(msg) sp.textContent=msg; }
+    dis('btn'+n, on);
   }
 
-  function renderPrecheck(info){
-    let h='<h3>사전 점검 결과</h3>';
-    h+='<div class="kv"><b>전체 TABLE</b><div>'+esc(info.table_count)+'</div></div>';
-    h+='<div class="kv"><b>재무제표 TABLE</b><div>'+esc(info.financial_table_count)+'</div></div>';
-    h+='<div class="kv"><b>주석 TABLE</b><div>'+esc(info.note_table_count)+'</div></div>';
-    if(info.warnings&&info.warnings.length) h+='<div><span class="pill wn">주의</span> '+esc(info.warnings.join(' / '))+'</div>';
-    const nc=info.note_conflicts||{};
+  /* ── 렌더러 ── */
+  function renderPrecheck(d){
+    var h='<h3>사전 점검 결과</h3>';
+    h+='<div class="kv"><b>전체 TABLE</b><div>'+esc(d.table_count)+'</div></div>';
+    h+='<div class="kv"><b>재무제표 TABLE</b><div>'+esc(d.financial_table_count)+'</div></div>';
+    h+='<div class="kv"><b>주석 TABLE</b><div>'+esc(d.note_table_count)+'</div></div>';
+    if(d.warnings&&d.warnings.length) h+='<div><span class="pill wn">주의</span> '+esc(d.warnings.join(' / '))+'</div>';
+    var nc=d.note_conflicts||{};
     h+='<div class="kv"><b>주석 중복</b><div>'+esc((nc.duplicates||[]).length)+'건</div></div>';
     h+='<div class="kv"><b>주석 공백 번호</b><div>'+esc(((nc.missing_numbers||[]).join(', '))||'없음')+'</div></div>';
     return h;
   }
   function renderAi(data){
-    let h='<h3>Python 검증 요약</h3>';
-    const s=(data.python_validation||{}).summary||{};
+    var h='<h3>Python 검증 요약</h3>';
+    var s=(data.python_validation||{}).summary||{};
     h+='<div class="kv"><b>시트 수</b><div>'+esc(s.sheet_count)+'</div></div>';
     h+='<div class="kv"><b>숫자 셀 수</b><div>'+esc(s.numeric_cell_count)+'</div></div>';
     h+='<div class="kv"><b>경고</b><div>'+esc(s.warning_count)+'</div></div>';
     h+='<div class="kv"><b>오류</b><div>'+esc(s.error_count)+'</div></div>';
-    h+='<hr><h3>AI 의견</h3><div>'+esc(data.ai_validation||'').replace(/\n/g,'<br>')+'</div>';
+    h+='<hr><h3>AI 의견</h3><div>'+esc(data.ai_validation||'').replace(/\\n/g,'<br>')+'</div>';
     return h;
   }
   function renderPrior(data){
-    let h='<h3>전기금액 검증 결과</h3>';
-    h+='<div class="kv"><b>일치</b><div>'+esc(data.summary?.ok)+'</div></div>';
-    h+='<div class="kv"><b>불일치</b><div>'+esc(data.summary?.mismatch)+'</div></div>';
-    h+='<div class="kv"><b>누락</b><div>'+esc(data.summary?.missing)+'</div></div>';
+    var h='<h3>전기금액 검증 결과</h3>';
+    var s=data.summary||{};
+    h+='<div class="kv"><b>일치</b><div>'+esc(s.ok)+'</div></div>';
+    h+='<div class="kv"><b>불일치</b><div>'+esc(s.mismatch)+'</div></div>';
+    h+='<div class="kv"><b>누락</b><div>'+esc(s.missing)+'</div></div>';
     h+='<table class="tbl"><tr><th>재무제표</th><th>샘플</th></tr>';
-    (data.tables||[]).slice(0,20).forEach(t=>{ const row=(t.rows||[]).find(x=>x.status!=='✅일치') || (t.rows||[])[0]; h+='<tr><td>'+esc(t.label)+'</td><td>'+esc(row ? (row.item+' / '+row.status) : '')+'</td></tr>'; });
+    (data.tables||[]).slice(0,20).forEach(function(t){
+      var row=(t.rows||[]).find(function(x){return x.status!=='\\u2705\\uc77c\\uce58';}) || (t.rows||[])[0];
+      h+='<tr><td>'+esc(t.label)+'</td><td>'+esc(row?(row.item+' / '+row.status):'')+'</td></tr>';
+    });
     h+='</table>'; return h;
   }
   function renderDiff(data){
-    let h='<h3>DSD Diff 요약</h3>';
-    h+='<div class="kv"><b>변경</b><div>'+esc(data.summary?.changed_count)+'</div></div>';
-    h+='<div class="kv"><b>추가</b><div>'+esc(data.summary?.added_count)+'</div></div>';
-    h+='<div class="kv"><b>삭제</b><div>'+esc(data.summary?.removed_count)+'</div></div>';
+    var h='<h3>DSD Diff 요약</h3>';
+    var s=data.summary||{};
+    h+='<div class="kv"><b>변경</b><div>'+esc(s.changed_count)+'</div></div>';
+    h+='<div class="kv"><b>추가</b><div>'+esc(s.added_count)+'</div></div>';
+    h+='<div class="kv"><b>삭제</b><div>'+esc(s.removed_count)+'</div></div>';
     h+='<hr><pre>'+esc(JSON.stringify(data,null,2))+'</pre>';
     return h;
   }
-  function lsGet(k,d){ try{ const v=window.localStorage ? localStorage.getItem(k) : null; return v===null ? d : v; }catch(_){ return d; } }
-  function lsSet(k,v){ try{ if(window.localStorage) localStorage.setItem(k,v); }catch(_){ } }
+
+  /* ── API 호출 함수들 ── */
+  function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v===null?d:v; }catch(_){ return d; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(_){} }
+
   function saveApiPrefs(){
-    const apiKey = byIdOrNull('apiKey'), apiProvider = byIdOrNull('apiProvider'), apiModel = byIdOrNull('apiModel'), apiBadge = byIdOrNull('apiBadge');
-    if(apiKey) lsSet('easydsd_api_key', apiKey.value);
-    if(apiProvider) lsSet('easydsd_provider', apiProvider.value);
-    if(apiModel) lsSet('easydsd_model', apiModel.value);
-    if(apiBadge && apiKey){
-      const on = apiKey.value.trim().length > 8;
-      apiBadge.textContent = on ? '설정됨 ✓' : '미설정';
-      apiBadge.className = 'badge' + (on ? ' ok' : '');
-    }
+    var k=el('apiKey'), p=el('apiProvider'), m=el('apiModel'), b=el('apiBadge');
+    if(k) lsSet('easydsd_api_key', k.value);
+    if(p) lsSet('easydsd_provider', p.value);
+    if(m) lsSet('easydsd_model', m.value);
+    if(b&&k){ var on=k.value.trim().length>8; b.textContent=on?'\\uc124\\uc815\\ub428 \\u2713':'\\ubbf8\\uc124\\uc815'; b.className='badge'+(on?' ok':''); }
   }
 
-  window.sw = function(id, btn){
-    document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
-    document.querySelectorAll('.tb').forEach(x=>x.classList.remove('on'));
-    const pane = byIdOrNull(id); if(pane) pane.classList.add('on');
+  function tabSwitch(id, btn){
+    document.querySelectorAll('.pane').forEach(function(x){ x.classList.remove('on'); });
+    document.querySelectorAll('.tb').forEach(function(x){ x.classList.remove('on'); });
+    var pane=el(id); if(pane) pane.classList.add('on');
     if(btn) btn.classList.add('on');
-  };
-  window.pick = function(id){ const inp = byIdOrNull(id); if(inp) inp.click(); };
-  window.loadFile = function(key){ const cfg=DZ[key]; const inp=cfg?byIdOrNull(cfg.inp):null; if(inp) loadFile(key, inp.files); };
+  }
 
-  window.precheckDsd = async function(){
-    if(!F['1']) return alert('DSD 파일을 먼저 선택하세요.');
-    const fd=new FormData(); fd.append('dsd',F['1']);
-    const r=await fetch('/api/precheck_dsd',{method:'POST',body:fd});
-    const data=await r.json(); const out=getResultBox(1); show('r1', true); setHtml(out.box.id, r.ok?renderPrecheck(data):('❌ '+esc(data.error||'사전 점검 실패')));
-  };
-
-  window.runDsd2Excel = async function(){
-    if(!F['1']) return alert('DSD 파일을 먼저 선택하세요.');
-    setBusy(1,true,'변환 중...');
+  async function doPrecheckDsd(){
+    if(!F['1']){ alert('DSD \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    var fd=new FormData(); fd.append('dsd',F['1']);
     try{
-      const fd=new FormData();
-      fd.append('dsd', F['1']);
-      fd.append('rollover', byIdOrNull('optRollover')?.checked ? '1' : '0');
-      fd.append('organize_notes', byIdOrNull('optNotes')?.checked ? '1' : '0');
-      fd.append('period_change', byIdOrNull('optPeriod')?.checked ? '1' : '0');
-      fd.append('year_offset', byIdOrNull('yearOffset')?.value || '1');
-      fd.append('notes_per_sheet', byIdOrNull('noteChunk')?.value || '5');
-      fd.append('cur_period', byIdOrNull('curPeriod')?.value || '');
-      fd.append('cur_year', byIdOrNull('curYear')?.value || '');
-      fd.append('start_m', byIdOrNull('startM')?.value || '');
-      fd.append('start_d', byIdOrNull('startD')?.value || '');
-      fd.append('end_m', byIdOrNull('endM')?.value || '');
-      fd.append('end_d', byIdOrNull('endD')?.value || '');
-      const r=await fetch('/api/dsd2excel',{method:'POST',body:fd});
-      if(!r.ok){ const e=await r.json(); throw new Error(e.error||'변환 실패'); }
-      const blob=await r.blob(); const info=JSON.parse(r.headers.get('X-Info')||'{}'); const url=URL.createObjectURL(blob);
-      let html='<h3>변환 결과 요약</h3>';
-      html+='<div class="kv"><b>생성 시트 수</b><div>'+esc(info.sheet_count ?? '-')+'</div></div>';
-      html+='<div class="kv"><b>재무 시트 수</b><div>'+esc(info.fin_sheet_count ?? '-')+'</div></div>';
-      html+='<div class="kv"><b>주석 시트 수</b><div>'+esc(info.note_sheet_count ?? '-')+'</div></div>';
-      html+='<div class="kv"><b>롤오버</b><div>'+(info.rollover?'적용':'미적용')+'</div></div>';
-      html+='<div class="kv"><b>주석 정리</b><div>'+(info.organize_notes?'적용':'미적용')+'</div></div>';
-      html+='<div class="kv"><b>기수/연도 밀기</b><div>'+(info.period_change?'적용':'미적용')+'</div></div>';
-      if(info.note_conflicts) html+='<div class="kv"><b>주석 번호 중복</b><div>'+esc(info.note_conflicts.duplicates || 0)+'건</div></div>';
-      html+='<a class="dl" download="작업양식.xlsx" href="'+url+'">📥 Excel 다운로드</a>';
-      show('r1', true); setHtml('r1box', html);
-    } catch(e){ show('r1', true); setHtml('r1box', '❌ '+esc(e.message)); }
-    finally{ setBusy(1,false); }
-  };
+      var r=await fetch('/api/precheck_dsd',{method:'POST',body:fd});
+      var data=await r.json();
+      show('r1',true); setHtml('r1box', r.ok?renderPrecheck(data):('\\u274c '+esc(data.error||'\\uc0ac\\uc804 \\uc810\\uac80 \\uc2e4\\ud328')));
+    }catch(e){ show('r1',true); setHtml('r1box','\\u274c '+esc(e.message)); }
+  }
 
-  window.runAiValidate = async function(){
-    if(!F['2']) return alert('Excel 파일을 먼저 선택하세요.');
-    const apiKey = byIdOrNull('apiKey'), apiProvider = byIdOrNull('apiProvider'), apiModel = byIdOrNull('apiModel');
-    if(!apiKey || !apiKey.value.trim()) return alert('AI 검증은 API Key 입력 사용자만 실행할 수 있습니다.');
-    setBusy(2,true,'AI 검증 중...');
+  async function doDsd2Excel(){
+    if(!F['1']){ alert('DSD \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy(1,true,'\\ubcc0\\ud658 \\uc911...');
     try{
-      const fd=new FormData(); fd.append('xlsx',F['2']); fd.append('api_key',apiKey.value.trim()); fd.append('provider',apiProvider?.value||'gemini'); fd.append('model',apiModel?.value||'');
-      const r=await fetch('/api/ai_validate',{method:'POST',body:fd}); const data=await r.json();
-      show('r2', true); setHtml('r2box', r.ok?renderAi(data):('❌ '+esc(data.error||'검증 실패')));
-    } finally { setBusy(2,false); }
-  };
+      var fd=new FormData();
+      fd.append('dsd',F['1']);
+      fd.append('rollover',     el('optRollover')&&el('optRollover').checked?'1':'0');
+      fd.append('organize_notes', el('optNotes')&&el('optNotes').checked?'1':'0');
+      fd.append('period_change',  el('optPeriod')&&el('optPeriod').checked?'1':'0');
+      fd.append('year_offset',    (el('yearOffset')||{value:'1'}).value||'1');
+      fd.append('notes_per_sheet',(el('noteChunk')||{value:'5'}).value||'5');
+      fd.append('cur_period',     (el('curPeriod')||{value:''}).value||'');
+      fd.append('cur_year',       (el('curYear')||{value:''}).value||'');
+      fd.append('start_m',        (el('startM')||{value:''}).value||'');
+      fd.append('start_d',        (el('startD')||{value:''}).value||'');
+      fd.append('end_m',          (el('endM')||{value:''}).value||'');
+      fd.append('end_d',          (el('endD')||{value:''}).value||'');
+      var r=await fetch('/api/dsd2excel',{method:'POST',body:fd});
+      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\ubcc0\\ud658 \\uc2e4\\ud328'); }
+      var blob=await r.blob();
+      var info=JSON.parse(r.headers.get('X-Info')||'{}');
+      var url=URL.createObjectURL(blob);
+      var h='<h3>\\ubcc0\\ud658 \\uacb0\\uacfc \\uc694\\uc57d</h3>';
+      h+='<div class="kv"><b>\\uc0dd\\uc131 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.sheet_count!=null?info.sheet_count:'-')+'</div></div>';
+      h+='<div class="kv"><b>\\uc7ac\\ubb34 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.fin_sheet_count!=null?info.fin_sheet_count:'-')+'</div></div>';
+      h+='<div class="kv"><b>\\uc8fc\\uc11d \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(info.note_sheet_count!=null?info.note_sheet_count:'-')+'</div></div>';
+      h+='<div class="kv"><b>\\ub864\\uc624\\ubc84</b><div>'+(info.rollover?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
+      h+='<div class="kv"><b>\\uc8fc\\uc11d \\uc815\\ub9ac</b><div>'+(info.organize_notes?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
+      h+='<div class="kv"><b>\\uae30\\uc218/\\uc5f0\\ub3c4 \\ubc00\\uae30</b><div>'+(info.period_change?'\\uc801\\uc6a9':'\\ubbf8\\uc801\\uc6a9')+'</div></div>';
+      if(info.note_conflicts) h+='<div class="kv"><b>\\uc8fc\\uc11d \\ubc88\\ud638 \\uc911\\ubcf5</b><div>'+esc(info.note_conflicts.duplicates||0)+'\\uac74</div></div>';
+      h+='<a class="dl" download="\\uc791\\uc5c5\\uc591\\uc2dd.xlsx" href="'+url+'">\\ud83d\\udce5 Excel \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>';
+      show('r1',true); setHtml('r1box',h);
+    }catch(e){ show('r1',true); setHtml('r1box','\\u274c '+esc(e.message)); }
+    finally{ busy(1,false); }
+  }
 
-  window.runExcelPrecheck = async function(){
-    if(!F['3']) return alert('Excel 파일을 먼저 선택하세요.');
-    setBusy(3,true,'사전 점검 중...');
+  async function doAiValidate(){
+    if(!F['2']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    var apiKey=el('apiKey'), apiProvider=el('apiProvider'), apiModel=el('apiModel');
+    if(!apiKey||!apiKey.value.trim()){ alert('AI \\uac80\\uc99d\\uc740 API Key \\uc785\\ub825 \\uc0ac\\uc6a9\\uc790\\ub9cc \\uc2e4\\ud589\\ud560 \\uc218 \\uc788\\uc2b5\\ub2c8\\ub2e4.'); return; }
+    busy(2,true,'AI \\uac80\\uc99d \\uc911...');
     try{
-      const fd=new FormData(); fd.append('xlsx',F['3']);
-      const r=await fetch('/api/precheck_excel',{method:'POST',body:fd}); const data=await r.json();
-      let html=r.ok?'<h3>업로드 사전 점검</h3>':'<h3>점검 실패</h3>';
+      var fd=new FormData();
+      fd.append('xlsx',F['2']); fd.append('api_key',apiKey.value.trim());
+      fd.append('provider',(apiProvider||{value:'gemini'}).value||'gemini');
+      fd.append('model',(apiModel||{value:''}).value||'');
+      var r=await fetch('/api/ai_validate',{method:'POST',body:fd});
+      var data=await r.json();
+      show('r2',true); setHtml('r2box', r.ok?renderAi(data):('\\u274c '+esc(data.error||'\\uac80\\uc99d \\uc2e4\\ud328')));
+    }catch(e){ show('r2',true); setHtml('r2box','\\u274c '+esc(e.message)); }
+    finally{ busy(2,false); }
+  }
+
+  async function doExcelPrecheck(){
+    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy('3a',true,'\\uc810\\uac80 \\uc911...'); busy('3b',true); busy(3,true);
+    try{
+      var fd=new FormData(); fd.append('xlsx',F['3']);
+      var r=await fetch('/api/precheck_excel',{method:'POST',body:fd});
+      var data=await r.json();
+      var h=r.ok?'<h3>\\uc5c5\\ub85c\\ub4dc \\uc0ac\\uc804 \\uc810\\uac80</h3>':'<h3>\\uc810\\uac80 \\uc2e4\\ud328</h3>';
       if(r.ok){
-        html+='<div class="kv"><b>업로드 가능</b><div>'+(data.ok?'예':'아니오')+'</div></div>';
-        html+='<div class="kv"><b>편집 시트 수</b><div>'+esc(data.sheet_count)+'</div></div>';
-        html+='<div><b>이슈</b><br>'+esc((data.issues||[]).join('\n')||'없음').replace(/\n/g,'<br>')+'</div><br>';
-        html+='<div><b>복구 가능 항목</b><br>'+esc((data.repairable||[]).join('\n')||'없음').replace(/\n/g,'<br>')+'</div><br>';
-        html+='<div><b>치명 항목</b><br>'+esc((data.fatal||[]).join('\n')||'없음').replace(/\n/g,'<br>')+'</div>';
-      } else html+='❌ '+esc(data.error||'점검 실패');
-      show('r3', true); setHtml('r3box', html);
-    } finally { setBusy(3,false); }
-  };
+        h+='<div class="kv"><b>\\uc5c5\\ub85c\\ub4dc \\uac00\\ub2a5</b><div>'+(data.ok?'\\uc608':'\\uc544\\ub2c8\\uc624')+'</div></div>';
+        h+='<div class="kv"><b>\\ud3b8\\uc9d1 \\uc2dc\\ud2b8 \\uc218</b><div>'+esc(data.sheet_count)+'</div></div>';
+        h+='<div><b>\\uc774\\uc288</b><br>'+esc((data.issues||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div><br>';
+        h+='<div><b>\\ubcf5\\uad6c \\uac00\\ub2a5 \\ud56d\\ubaa9</b><br>'+esc((data.repairable||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div><br>';
+        h+='<div><b>\\uce58\\uba85 \\ud56d\\ubaa9</b><br>'+esc((data.fatal||[]).join('\\n')||'\\uc5c6\\uc74c').replace(/\\n/g,'<br>')+'</div>';
+      } else h+='\\u274c '+esc(data.error||'\\uc810\\uac80 \\uc2e4\\ud328');
+      show('r3',true); setHtml('r3box',h);
+    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
+    finally{ busy('3a',false); busy('3b',false); busy(3,false); }
+  }
 
-  window.runExcelRepair = async function(){
-    if(!F['3']) return alert('Excel 파일을 먼저 선택하세요.');
-    setBusy(3,true,'복구본 생성 중...');
+  async function doExcelRepair(){
+    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy('3a',true); busy('3b',true,'\\ubcf5\\uad6c\\ubcf8 \\uc0dd\\uc131 \\uc911...'); busy(3,true);
     try{
-      const fd=new FormData(); fd.append('xlsx',F['3']);
-      const r=await fetch('/api/repair_excel',{method:'POST',body:fd});
-      if(!r.ok){ const e=await r.json(); throw new Error(e.error||'복구 실패'); }
-      const blob=await r.blob(); const info=JSON.parse(r.headers.get('X-Info')||'{}'); const url=URL.createObjectURL(blob);
-      show('r3', true); setHtml('r3box', '<h3>복구본 생성 완료</h3><div>'+esc((info.actions||[]).join(' / ')||'적용 가능한 보수적 복구만 수행')+'</div><a class="dl" href="'+url+'" download="복구본.xlsx">📥 복구본 다운로드</a>');
-    } catch(e){ show('r3', true); setHtml('r3box', '❌ '+esc(e.message)); }
-    finally { setBusy(3,false); }
-  };
+      var fd=new FormData(); fd.append('xlsx',F['3']);
+      var r=await fetch('/api/repair_excel',{method:'POST',body:fd});
+      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\ubcf5\\uad6c \\uc2e4\\ud328'); }
+      var blob=await r.blob();
+      var info=JSON.parse(r.headers.get('X-Info')||'{}');
+      var url=URL.createObjectURL(blob);
+      show('r3',true); setHtml('r3box','<h3>\\ubcf5\\uad6c\\ubcf8 \\uc0dd\\uc131 \\uc644\\ub8cc</h3><div>'+esc((info.actions||[]).join(' / ')||'\\uc801\\uc6a9 \\uac00\\ub2a5\\ud55c \\ubcf4\\uc218\\uc801 \\ubcf5\\uad6c\\ub9cc \\uc218\\ud589')+'</div><a class="dl" href="'+url+'" download="\\ubcf5\\uad6c\\ubcf8.xlsx">\\ud83d\\udce5 \\ubcf5\\uad6c\\ubcf8 \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>');
+    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
+    finally{ busy('3a',false); busy('3b',false); busy(3,false); }
+  }
 
-  window.runExcel2Dsd = async function(){
-    if(!F['3']) return alert('Excel 파일을 먼저 선택하세요.');
-    setBusy(3,true,'재조립 중...');
+  async function doExcel2Dsd(){
+    if(!F['3']){ alert('Excel \\ud30c\\uc77c\\uc744 \\uba3c\\uc800 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy(3,true,'\\uc7ac\\uc870\\ub9bd \\uc911...');
     try{
-      const fd=new FormData(); fd.append('xlsx',F['3']);
-      const r=await fetch('/api/excel2dsd',{method:'POST',body:fd});
-      if(!r.ok){ const e=await r.json(); throw new Error(e.error||'재조립 실패'); }
-      const blob=await r.blob(); const url=URL.createObjectURL(blob); const info=JSON.parse(r.headers.get('X-Info')||'{}');
-      show('r3', true); setHtml('r3box', '<h3>DSD 재조립 완료</h3><div class="kv"><b>상태</b><div>'+esc(info.status||'ok')+'</div></div><a class="dl" href="'+url+'" download="조립결과.dsd">📥 DSD 다운로드</a>');
-    } catch(e){ show('r3', true); setHtml('r3box', '❌ '+esc(e.message)); }
-    finally { setBusy(3,false); }
-  };
+      var fd=new FormData(); fd.append('xlsx',F['3']);
+      var r=await fetch('/api/excel2dsd',{method:'POST',body:fd});
+      if(!r.ok){ var e=await r.json(); throw new Error(e.error||'\\uc7ac\\uc870\\ub9bd \\uc2e4\\ud328'); }
+      var blob=await r.blob();
+      var url=URL.createObjectURL(blob);
+      var info=JSON.parse(r.headers.get('X-Info')||'{}');
+      show('r3',true); setHtml('r3box','<h3>DSD \\uc7ac\\uc870\\ub9bd \\uc644\\ub8cc</h3><div class="kv"><b>\\uc0c1\\ud0dc</b><div>'+esc(info.status||'ok')+'</div></div><a class="dl" href="'+url+'" download="\\uc870\\ub9bd\\uacb0\\uacfc.dsd">\\ud83d\\udce5 DSD \\ub2e4\\uc6b4\\ub85c\\ub4dc</a>');
+    }catch(e){ show('r3',true); setHtml('r3box','\\u274c '+esc(e.message)); }
+    finally{ busy(3,false); }
+  }
 
-  window.runPrior = async function(){
-    if(!(F['4p'] && F['4c'])) return alert('두 개의 DSD 파일을 모두 선택하세요.');
-    setBusy(4,true,'전기금액 비교 중...');
+  async function doPrior(){
+    if(!(F['4p']&&F['4c'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy(4,true,'\\uc804\\uae30\\uae08\\uc561 \\ube44\\uad50 \\uc911...');
     try{
-      const fd=new FormData(); fd.append('prev_dsd',F['4p']); fd.append('curr_dsd',F['4c']);
-      const r=await fetch('/api/verify_prior',{method:'POST',body:fd}); const data=await r.json();
-      show('r4', true); setHtml('r4box', r.ok?renderPrior(data):('❌ '+esc(data.error||'검증 실패')));
-    } finally { setBusy(4,false); }
-  };
+      var fd=new FormData(); fd.append('prev_dsd',F['4p']); fd.append('curr_dsd',F['4c']);
+      var r=await fetch('/api/verify_prior',{method:'POST',body:fd});
+      var data=await r.json();
+      show('r4',true); setHtml('r4box', r.ok?renderPrior(data):('\\u274c '+esc(data.error||'\\uac80\\uc99d \\uc2e4\\ud328')));
+    }catch(e){ show('r4',true); setHtml('r4box','\\u274c '+esc(e.message)); }
+    finally{ busy(4,false); }
+  }
 
-  window.runDiff = async function(){
-    if(!(F['5b'] && F['5a'])) return alert('두 개의 DSD 파일을 모두 선택하세요.');
-    setBusy(5,true,'DSD 비교 중...');
+  async function doDiff(){
+    if(!(F['5b']&&F['5a'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    busy(5,true,'DSD \\ube44\\uad50 \\uc911...');
     try{
-      const fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
-      const r=await fetch('/api/diff_dsd',{method:'POST',body:fd}); const data=await r.json();
-      show('r5', true); setHtml('r5box', r.ok?renderDiff(data):('❌ '+esc(data.error||'비교 실패')));
-    } finally { setBusy(5,false); }
-  };
+      var fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
+      var r=await fetch('/api/diff_dsd',{method:'POST',body:fd});
+      var data=await r.json();
+      show('r5',true); setHtml('r5box', r.ok?renderDiff(data):('\\u274c '+esc(data.error||'\\ube44\\uad50 \\uc2e4\\ud328')));
+    }catch(e){ show('r5',true); setHtml('r5box','\\u274c '+esc(e.message)); }
+    finally{ busy(5,false); }
+  }
 
-  window.downloadDiffXlsx = async function(){
-    if(!(F['5b'] && F['5a'])) return alert('두 개의 DSD 파일을 모두 선택하세요.');
-    const fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
-    const r=await fetch('/api/diff_dsd_xlsx',{method:'POST',body:fd});
-    if(!r.ok){ const e=await r.json(); return alert(e.error||'다운로드 실패'); }
-    const blob=await r.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='DSD_Diff_Report.xlsx'; document.body.appendChild(a); a.click(); a.remove();
-  };
+  async function doDownloadDiffXlsx(){
+    if(!(F['5b']&&F['5a'])){ alert('\\ub450 \\uac1c\\uc758 DSD \\ud30c\\uc77c\\uc744 \\ubaa8\\ub450 \\uc120\\ud0dd\\ud558\\uc138\\uc694.'); return; }
+    try{
+      var fd=new FormData(); fd.append('before_dsd',F['5b']); fd.append('after_dsd',F['5a']);
+      var r=await fetch('/api/diff_dsd_xlsx',{method:'POST',body:fd});
+      if(!r.ok){ var e=await r.json(); alert(e.error||'\\ub2e4\\uc6b4\\ub85c\\ub4dc \\uc2e4\\ud328'); return; }
+      var blob=await r.blob();
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a'); a.href=url; a.download='DSD_Diff_Report.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert(e.message); }
+  }
 
+  /* ── DOMContentLoaded: 이벤트 바인딩 ── */
   document.addEventListener('DOMContentLoaded', function(){
-    ['1','2','3','4p','4c','5b','5a'].forEach(bindDropzone);
-
-    document.querySelectorAll('[onclick],[onchange]').forEach(el => {
-      el.removeAttribute('onclick');
-      el.removeAttribute('onchange');
+    /* 탭 버튼 */
+    document.querySelectorAll('.tabs .tb').forEach(function(btn, idx){
+      btn.addEventListener('click', function(){ tabSwitch('p'+(idx+1), btn); });
     });
 
-    document.querySelectorAll('.tabs .tb').forEach((btn, idx) => {
-      btn.addEventListener('click', () => window.sw('p' + String(idx + 1), btn));
-    });
+    /* 드롭존 */
+    ['1','2','3','4p','4c','5b','5a'].forEach(bindDz);
 
-    const clickMap = {
-      'btn1': window.runDsd2Excel,
-      'btn2': window.runAiValidate,
-      'btn3': window.runExcel2Dsd,
-      'btn3a': window.runExcelPrecheck,
-      'btn3b': window.runExcelRepair,
-      'btn4': window.runPrior,
-      'btn5': window.runDiff,
-      'btn5x': window.downloadDiffXlsx,
-      'btnPrecheck': window.precheckDsd,
+    /* 액션 버튼 */
+    var btnMap = {
+      'btn1':        doDsd2Excel,
+      'btn2':        doAiValidate,
+      'btn3':        doExcel2Dsd,
+      'btn3a':       doExcelPrecheck,
+      'btn3b':       doExcelRepair,
+      'btn4':        doPrior,
+      'btn5':        doDiff,
+      'btn5x':       doDownloadDiffXlsx,
+      'btnPrecheck': doPrecheckDsd
     };
-    Object.entries(clickMap).forEach(([id, fn]) => {
-      const el = byIdOrNull(id);
-      if(el && typeof fn === 'function') el.addEventListener('click', fn);
+    Object.keys(btnMap).forEach(function(id){
+      var e=el(id); if(e) e.addEventListener('click', btnMap[id]);
     });
-    // ※ pickMap 블록 제거: bindDropzone()가 이미 각 드롭존에 클릭 핸들러를 등록하므로
-    //   여기서 또 등록하면 inp.click()이 두 번 호출되어 파일 선택창이 열리지 않음.
 
-    const apiKey = byIdOrNull('apiKey'), apiProvider = byIdOrNull('apiProvider'), apiModel = byIdOrNull('apiModel');
-    if(apiKey){ apiKey.value = lsGet('easydsd_api_key', ''); apiKey.addEventListener('input', saveApiPrefs); }
-    if(apiProvider){ apiProvider.value = lsGet('easydsd_provider', 'gemini'); apiProvider.addEventListener('change', saveApiPrefs); }
-    if(apiModel){ apiModel.value = lsGet('easydsd_model', 'gemini-1.5-flash'); apiModel.addEventListener('change', saveApiPrefs); }
+    /* API 설정 복원 */
+    var ak=el('apiKey'), ap=el('apiProvider'), am=el('apiModel');
+    if(ak){ ak.value=lsGet('easydsd_api_key',''); ak.addEventListener('input', saveApiPrefs); }
+    if(ap){ ap.value=lsGet('easydsd_provider','gemini'); ap.addEventListener('change', saveApiPrefs); }
+    if(am){ am.value=lsGet('easydsd_model','gemini-1.5-flash'); am.addEventListener('change', saveApiPrefs); }
     saveApiPrefs();
-    refreshPairButtons();
+    refreshPairBtns();
   });
 })();
 </script>
