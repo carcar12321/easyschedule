@@ -4,6 +4,7 @@ import json
 import base64
 import random
 import string
+import math
 import requests
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -123,6 +124,104 @@ def get_google_place_info_by_name(name: str, api_key: str):
     except Exception as e:
         print(f"Google Place Name Search Error: {e}")
     return None
+
+def calc_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
+    r = 6371000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return int(2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+def google_places_nearby(api_key: str, lat: float, lng: float, radius: int = 900, keyword: str = "", place_type: str = "", language: str = "ko"):
+    params = {
+        "location": f"{lat},{lng}",
+        "radius": radius,
+        "key": api_key,
+        "language": language
+    }
+    if keyword:
+        params["keyword"] = keyword
+    if place_type:
+        params["type"] = place_type
+    res = requests.get(
+        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+        params=params,
+        timeout=8
+    ).json()
+    return res.get("status", "UNKNOWN_ERROR"), res.get("results", [])
+
+def google_places_text_search(api_key: str, query: str, lat: float, lng: float, radius: int = 1200, language: str = "ko"):
+    res = requests.get(
+        "https://maps.googleapis.com/maps/api/place/textsearch/json",
+        params={
+            "query": query,
+            "location": f"{lat},{lng}",
+            "radius": radius,
+            "key": api_key,
+            "language": language
+        },
+        timeout=8
+    ).json()
+    return res.get("status", "UNKNOWN_ERROR"), res.get("results", [])
+
+def google_distance_matrix_walking(api_key: str, origin_lat: float, origin_lng: float, destinations: List[dict]):
+    if not destinations:
+        return {}
+    dests = "|".join([f"{d['lat']},{d['lng']}" for d in destinations if d.get("lat") is not None and d.get("lng") is not None])
+    if not dests:
+        return {}
+    res = requests.get(
+        "https://maps.googleapis.com/maps/api/distancematrix/json",
+        params={
+            "origins": f"{origin_lat},{origin_lng}",
+            "destinations": dests,
+            "mode": "walking",
+            "key": api_key,
+            "language": "ko"
+        },
+        timeout=8
+    ).json()
+    data = {}
+    rows = res.get("rows", [])
+    if not rows:
+        return data
+    elements = rows[0].get("elements", [])
+    valid_dests = [d for d in destinations if d.get("lat") is not None and d.get("lng") is not None]
+    for i, el in enumerate(elements):
+        if i >= len(valid_dests):
+            continue
+        item = valid_dests[i]
+        if el.get("status") == "OK":
+            data[item["place_id"]] = {
+                "distance_text": el.get("distance", {}).get("text", ""),
+                "distance_value": el.get("distance", {}).get("value"),
+                "walking_time_text": el.get("duration", {}).get("text", ""),
+                "walking_time_value": el.get("duration", {}).get("value")
+            }
+    return data
+
+def parse_food_preferences_with_gemini(user_text: str, llm_key: str):
+    if not llm_key or not user_text.strip():
+        return {}
+    prompt = f"""다음 사용자 문장을 식당 추천용 JSON으로 정규화해줘.
+문장: "{user_text}"
+키는 반드시 menu_keywords(배열), mood_keywords(배열), solo_ok(불리언 또는 null), exclude_keywords(배열), priority(문자열)만 사용.
+설명 없이 JSON 한 개만 출력."""
+    try:
+        res = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={llm_key}",
+            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}},
+            timeout=12
+        )
+        if not res.ok:
+            return {}
+        text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        text = re.sub(r"^```(json)?\n?|```$", "", text, flags=re.IGNORECASE).strip()
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
 
 # ─────────────────────────────────────────────
 # 도시 ↔ 통화 매핑
@@ -411,6 +510,11 @@ class ApproveRequest(BaseModel):
 class CommentCreate(BaseModel):
     writer_name: str
     content: str
+
+class WhatToEatRequest(BaseModel):
+    lat: float
+    lng: float
+    user_text: Optional[str] = ""
 
 # ─────────────────────────────────────────────
 # 정적 파일 & 로그인 API
@@ -1052,24 +1156,192 @@ def delete_comment(room_id: str, sch_id: int, comment_id: int, credentials: Opti
 @app.get("/api/nearby")
 def get_nearby(lat: float, lng: float, type: str, x_google_api_key: Optional[str] = Header(None)):
     if not x_google_api_key:
-        return {"results": []}
+        return {"results": [], "error": "Google API 키가 누락되었습니다."}
 
-    keywords = {
-        "restaurant": "restaurant",
-        "smoking": "smoking area|smoking allowed cafe",
-        "convenience": "convenience_store"
-    }
-    url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius=1000&keyword={keywords.get(type)}&key={x_google_api_key}&language=ko"
-    res = requests.get(url).json().get("results", [])
+    if type not in ("restaurant", "smoking", "convenience"):
+        return {"results": [], "error": "지원하지 않는 검색 타입입니다."}
 
-    if type == "restaurant":
-        res = [r for r in res if r.get("rating", 0) >= 4.0][:3]
-        for r in res:
-            r["ai_desc"] = f"현지 평점 {r.get('rating')}점 맛집입니다. 실패 없는 선택!"
-    else:
-        res = res[:3]
+    try:
+        seen = {}
+        candidates = []
+        if type == "restaurant":
+            st, rs = google_places_nearby(x_google_api_key, lat, lng, radius=1500, place_type="restaurant", language="ko")
+            candidates.extend(rs[:20])
+            if st != "OK" and not candidates:
+                return {"results": [], "error": f"Google Places 호출 실패: {st}"}
+        elif type == "convenience":
+            _, rs = google_places_nearby(x_google_api_key, lat, lng, radius=1500, place_type="convenience_store", language="ko")
+            candidates.extend(rs[:20])
+            for kw in ["편의점", "convenience store", "7-Eleven", "FamilyMart", "CU", "GS25", "Lawson"]:
+                _, kw_rs = google_places_text_search(x_google_api_key, kw, lat, lng, radius=1800, language="ko")
+                candidates.extend(kw_rs[:7])
+        else:
+            smoking_queries = ["흡연구역", "흡연 부스", "smoking area", "smoking zone", "喫煙所"]
+            for q in smoking_queries:
+                _, rs = google_places_text_search(x_google_api_key, q, lat, lng, radius=2000, language="ko")
+                candidates.extend(rs[:8])
 
-    return {"results": res}
+        for p in candidates:
+            pid = p.get("place_id")
+            if not pid or pid in seen:
+                continue
+            loc = p.get("geometry", {}).get("location", {})
+            d_m = calc_distance_m(lat, lng, loc.get("lat", lat), loc.get("lng", lng))
+            score = 0.0
+            rating = p.get("rating", 0) or 0
+            user_ratings_total = p.get("user_ratings_total", 0) or 0
+            is_open = p.get("opening_hours", {}).get("open_now")
+
+            if type == "restaurant":
+                score = (rating * 18) + min(user_ratings_total, 500) * 0.05 - d_m * 0.01 + (7 if is_open else 0)
+                reason = f"평점 {rating}점, 리뷰 {user_ratings_total}개이며 현재 위치에서 비교적 가깝습니다."
+            elif type == "convenience":
+                score = 120 - d_m * 0.02 + (5 if is_open else 0) + (rating * 5)
+                reason = "현재 위치에서 접근성이 좋아 보이고 간단한 물품 구매에 적합해 보입니다."
+            else:
+                score = 100 - d_m * 0.02 + (rating * 4)
+                reason = "흡연 관련 키워드로 검색된 장소이며 현재 위치에서 비교적 이동이 쉬워 보입니다."
+
+            map_url = f"https://www.google.com/maps/place/?q=place_id:{pid}"
+            seen[pid] = {
+                "name": p.get("name", "이름 없음"),
+                "rating": rating if rating else None,
+                "address": p.get("vicinity") or p.get("formatted_address") or "주소 정보 없음",
+                "map_url": map_url,
+                "place_id": pid,
+                "distance_m": d_m,
+                "distance_text": f"약 {d_m}m",
+                "reason": reason,
+                "score": score
+            }
+
+        sorted_results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:5]
+        for r in sorted_results:
+            r.pop("score", None)
+        if not sorted_results:
+            return {"results": [], "error": "반경 내 후보가 부족합니다. 반경을 넓히거나 키워드를 바꿔주세요."}
+        return {"results": sorted_results}
+    except Exception as e:
+        return {"results": [], "error": f"주변 검색 처리 중 오류: {str(e)}"}
+
+@app.post("/api/what_to_eat")
+def what_to_eat(req: WhatToEatRequest, x_google_api_key: Optional[str] = Header(None), x_llm_api_key: Optional[str] = Header(None)):
+    if not x_google_api_key:
+        return {"results": [], "error": "Google API 키가 누락되었습니다.", "debug": {"used_llm": False, "candidate_count": 0}}
+
+    try:
+        used_llm = bool(x_llm_api_key and (req.user_text or "").strip())
+        pref = parse_food_preferences_with_gemini(req.user_text or "", x_llm_api_key) if used_llm else {}
+        menu_keywords = pref.get("menu_keywords") or []
+        mood_keywords = pref.get("mood_keywords") or []
+        exclude_keywords = pref.get("exclude_keywords") or []
+        solo_ok = pref.get("solo_ok")
+
+        candidates = []
+        _, nearby_res = google_places_nearby(x_google_api_key, req.lat, req.lng, radius=1200, place_type="restaurant", language="ko")
+        candidates.extend(nearby_res[:20])
+
+        text_queries = []
+        if not (req.user_text or "").strip():
+            text_queries = ["맛집", "restaurant"]
+        else:
+            text_queries = [req.user_text] + [f"{k} 맛집" for k in menu_keywords[:3]] + [f"{k} 식당" for k in mood_keywords[:2]]
+        for q in text_queries[:5]:
+            _, t_res = google_places_text_search(x_google_api_key, q, req.lat, req.lng, radius=1800, language="ko")
+            candidates.extend(t_res[:8])
+
+        uniq = {}
+        for p in candidates:
+            pid = p.get("place_id")
+            if not pid or pid in uniq:
+                continue
+            loc = p.get("geometry", {}).get("location", {})
+            uniq[pid] = {
+                "name": p.get("name", "이름 없음"),
+                "rating": p.get("rating"),
+                "user_ratings_total": p.get("user_ratings_total", 0) or 0,
+                "address": p.get("vicinity") or p.get("formatted_address") or "주소 정보 없음",
+                "place_id": pid,
+                "lat": loc.get("lat"),
+                "lng": loc.get("lng"),
+                "types": p.get("types", []),
+                "open_now": p.get("opening_hours", {}).get("open_now"),
+            }
+
+        if not uniq:
+            return {"results": [], "error": "주변 식당 후보를 찾지 못했습니다.", "debug": {"used_llm": used_llm, "candidate_count": 0}}
+
+        walk_info = google_distance_matrix_walking(
+            x_google_api_key,
+            req.lat,
+            req.lng,
+            [{"place_id": v["place_id"], "lat": v["lat"], "lng": v["lng"]} for v in uniq.values()]
+        )
+
+        scored = []
+        user_text_l = (req.user_text or "").lower()
+        for item in uniq.values():
+            pid = item["place_id"]
+            dm = walk_info.get(pid, {})
+            distance_value = dm.get("distance_value") or calc_distance_m(req.lat, req.lng, item["lat"] or req.lat, item["lng"] or req.lng)
+            walking_time_value = dm.get("walking_time_value")
+            walking_time_text = dm.get("walking_time_text") or f"도보 약 {max(3, int(distance_value / 70))}분"
+            distance_text = dm.get("distance_text") or f"약 {distance_value}m"
+
+            rating = item.get("rating") or 0
+            reviews = item.get("user_ratings_total", 0)
+            text_score = 0
+            hay = f"{item['name']} {item['address']}".lower()
+            if user_text_l:
+                for tk in (menu_keywords + mood_keywords + [user_text_l]):
+                    if tk and tk.lower() in hay:
+                        text_score += 7
+            for ex in exclude_keywords:
+                if ex and ex.lower() in hay:
+                    text_score -= 12
+
+            score = (rating * 16) + min(reviews, 600) * 0.04 - distance_value * 0.012 + text_score + (6 if item.get("open_now") else 0)
+            if walking_time_value and walking_time_value <= 600:
+                score += 8
+
+            reasons = [f"평점 {rating}점(리뷰 {reviews}개)이며 {distance_text} 거리입니다."]
+            if walking_time_text:
+                reasons.append(f"{walking_time_text} 정도로 이동 가능합니다.")
+            if menu_keywords:
+                reasons.append(f"요청하신 조건(예: {', '.join(menu_keywords[:2])})과의 연관성이 추정됩니다.")
+            reason = " ".join(reasons[:2])
+            solo_hint = "혼밥에 비교적 무난해 보입니다." if solo_ok is True else ("혼밥 적합 여부는 현장 좌석 구성 확인을 권장합니다." if solo_ok is False else "분위기/혼밥 적합성은 리뷰 기준 추정입니다.")
+
+            scored.append({
+                "name": item["name"],
+                "rating": item.get("rating"),
+                "address": item["address"],
+                "map_url": f"https://www.google.com/maps/place/?q=place_id:{pid}",
+                "distance_text": distance_text,
+                "walking_time_text": walking_time_text,
+                "reason": reason,
+                "solo_hint": solo_hint,
+                "place_id": pid,
+                "score": score
+            })
+
+        filtered = []
+        for x in scored:
+            d_text = x.get("distance_text", "")
+            if "km" in d_text:
+                filtered.append(x)
+                continue
+            m = re.search(r"(\d+)", d_text)
+            if not m or int(m.group(1)) <= 1400:
+                filtered.append(x)
+        top = sorted(filtered, key=lambda x: x["score"], reverse=True)[:5]
+        for t in top:
+            t.pop("score", None)
+        if not top:
+            return {"results": [], "error": "반경 내 후보가 부족합니다.", "debug": {"used_llm": used_llm, "candidate_count": len(scored)}}
+        return {"results": top, "debug": {"used_llm": used_llm, "candidate_count": len(scored)}}
+    except Exception as e:
+        return {"results": [], "error": f"추천 처리 실패: {str(e)}", "debug": {"used_llm": False, "candidate_count": 0}}
 
 @app.get("/api/travel_time")
 def get_travel_time(origin: str, dest: str, x_google_api_key: Optional[str] = Header(None)):
