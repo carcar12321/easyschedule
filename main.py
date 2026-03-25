@@ -857,7 +857,7 @@ def generate_ai_schedule(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
 ):
     role, nickname = get_current_user_info(room_id, credentials)
-        if role not in ("admin", "team"):
+    if role not in ("admin", "team"):
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
 
     if not x_llm_api_key:
@@ -971,7 +971,7 @@ def generate_ai_schedule(
         raise HTTPException(status_code=500, detail="AI가 정해진 규칙(순수 JSON)대로 응답하지 못했습니다. 다시 시도해주세요.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 스케줄 생성 중 오류 발생: {str(e)}")
-        @app.post("/room/{room_id}/ai_schedule_edit")
+@app.post("/room/{room_id}/ai_schedule_edit")
 def edit_ai_schedule(
     room_id: str,
     req: AiScheduleEditRequest,
