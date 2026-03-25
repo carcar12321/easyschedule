@@ -353,6 +353,7 @@
     <button class="float-btn" style="background:#3b82f6;" onclick="handleGPS('restaurant')">🍴 근처 맛집 추천</button>
     <button class="float-btn" style="background:#475569;" onclick="handleGPS('smoking')">🚬 근처 흡연구역</button>
     <button class="float-btn" style="background:#10b981;" onclick="handleGPS('convenience')">🏪 주변 편의점</button>
+    <button class="float-btn" style="background:#ea580c;" onclick="openWhatToEatModal()">🍽️ 뭐 먹지?</button>
     <a class="float-btn" style="background:#1a73e8;" href="https://maps.google.com" target="_blank">🗺️ 구글맵 열기</a>
     <a class="float-btn" style="background:#c0392b;" href="https://tabelog.com" target="_blank">🍜 타베로그 열기</a>
 </div>
@@ -467,6 +468,19 @@
         <h3 style="color:#2b6cb0;">📍 주변 검색 결과</h3>
         <div id="gpsModalBody"></div>
         <button class="btn-submit" style="margin-top:15px; background:#4a5568;" onclick="document.getElementById('gpsResultModal').style.display='none'">확인 및 닫기</button>
+    </div>
+</div>
+
+<!-- 뭐 먹지 모달 -->
+<div id="whatToEatModal" class="modal-overlay">
+    <div class="modal-content">
+        <h3 style="color:#ea580c;">🍽️ 뭐 먹지?</h3>
+        <p style="font-size:0.85rem; color:#666; margin-top:0;">원하는 분위기/메뉴를 자유롭게 적어주세요. 비워두면 도보 10분 내 식당 5곳을 추천해요.</p>
+        <textarea id="whatToEatText" rows="4" placeholder="말고기 먹고 싶어&#10;혼자 식사 가능했으면 좋겠어&#10;조용한 분위기&#10;가성비 좋은 현지 맛집"></textarea>
+        <div style="display:flex; gap:10px;">
+            <button class="btn-submit" style="background:#ea580c;" onclick="submitWhatToEat()">추천받기</button>
+            <button class="btn-action" style="width:50%; background:#e2e8f0;" onclick="document.getElementById('whatToEatModal').style.display='none'">닫기</button>
+        </div>
     </div>
 </div>
 
@@ -988,6 +1002,63 @@
         } catch(e) { console.log("Budget error ignored."); }
     }
 
+    function formatGpsCard(r, idx = null) {
+        const title = idx != null ? `${idx + 1}. ${r.name || '이름 없음'}` : (r.name || '이름 없음');
+        return `<div class="ai-card">
+            <strong>${title}</strong><br>
+            ${r.rating ? `⭐ 평점: ${r.rating}<br>` : ''}
+            ${r.address ? `📍 ${r.address}<br>` : ''}
+            ${r.distance_text ? `🚶 ${r.distance_text}${r.walking_time_text ? ` · ${r.walking_time_text}` : ''}<br>` : ''}
+            ${r.reason ? `💡 ${r.reason}<br>` : ''}
+            ${r.solo_hint ? `🪑 ${r.solo_hint}<br>` : ''}
+            <a href="${r.map_url || `https://maps.google.com/?q=${encodeURIComponent(r.name || '')}`}" target="_blank" style="margin-top:5px;display:inline-block;">🗺️ 구글 지도로 보기</a>
+        </div>`;
+    }
+
+    function openWhatToEatModal() {
+        document.getElementById('whatToEatModal').style.display = 'flex';
+        document.getElementById('whatToEatText').focus();
+    }
+
+    async function submitWhatToEat() {
+        const gKey = localStorage.getItem('my_google_api_key');
+        if (!gKey || gKey.length < 5) { alert("상단 🔑API 설정에서 Google API Key를 먼저 입력해주세요."); return; }
+        const userText = document.getElementById('whatToEatText').value.trim();
+        document.getElementById('whatToEatModal').style.display = 'none';
+
+        const modal = document.getElementById('gpsResultModal');
+        const body  = document.getElementById('gpsModalBody');
+        modal.style.display = 'flex';
+        body.innerHTML = "현재 위치 기반 식당 추천을 준비 중입니다... ⏳";
+
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+                try {
+                    const res = await fetch(`/api/what_to_eat`, {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, user_text: userText })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || data.error) {
+                        body.innerHTML = `추천 실패: ${data.error || "외부 API 호출에 실패했습니다."}`;
+                        return;
+                    }
+                    if (!data.results || data.results.length === 0) {
+                        body.innerHTML = "추천 가능한 식당을 찾지 못했습니다. 검색 조건을 완화해 다시 시도해주세요.";
+                        return;
+                    }
+                    const llmTag = data.debug?.used_llm ? " (Gemini 조건 해석 사용)" : " (규칙 기반 추천)";
+                    body.innerHTML = `<p style="color:#555; font-size:0.85rem;">총 ${data.debug?.candidate_count || data.results.length}개 후보 중 상위 5개를 추천했습니다${llmTag}.</p>`
+                        + data.results.map((r, i) => formatGpsCard(r, i)).join('');
+                } catch (e) {
+                    body.innerHTML = "추천 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+                }
+            },
+            () => { body.innerHTML = "위치 권한을 허용해야 '뭐 먹지?' 추천을 사용할 수 있습니다."; }
+        );
+    }
+
     // ── GPS 주변 검색 ──────────────────────────────
     async function handleGPS(type) {
         const gKey = localStorage.getItem('my_google_api_key');
@@ -1001,14 +1072,16 @@
                 try {
                     const res = await fetch(`/api/nearby?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}&type=${type}`, { headers: getAuthHeaders() });
                     const data = await res.json();
-                    if (data.results.length === 0) {
-                        body.innerHTML = "반경 내에 결과가 없거나 API 키 문제가 발생했습니다.";
+                    if (!res.ok || data.error) {
+                        body.innerHTML = `조회 실패: ${data.error || "외부 API 호출 오류가 발생했습니다."}`;
+                    } else if (!data.results || data.results.length === 0) {
+                        body.innerHTML = "반경 내 결과가 부족합니다. 잠시 뒤 다시 시도하거나 위치를 바꿔주세요.";
                     } else {
-                        body.innerHTML = data.results.map(r =>
-                            `<div class="ai-card"><b>${r.name}</b><br><a href="https://maps.google.com/?q=${encodeURIComponent(r.name)}" target="_blank" style="margin-top:5px;display:inline-block;">🗺️ 구글 지도로 보기</a></div>`
-                        ).join('');
+                        const titleMap = { restaurant: "🍴 근처 맛집", smoking: "🚬 근처 흡연구역", convenience: "🏪 주변 편의점" };
+                        body.innerHTML = `<p style="color:#555; font-size:0.85rem;">${titleMap[type] || "주변 검색"} 결과 ${data.results.length}건입니다.</p>`
+                            + data.results.map((r, i) => formatGpsCard(r, i)).join('');
                     }
-                } catch(e) { body.innerHTML = "조회 중 오류가 발생했습니다."; }
+                } catch(e) { body.innerHTML = "조회 중 오류가 발생했습니다. 네트워크 상태를 확인해주세요."; }
             },
             () => { body.innerHTML = "위치 권한을 허용해야 사용할 수 있습니다."; }
         );
