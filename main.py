@@ -109,7 +109,7 @@ def get_google_place_info_by_name(name: str, api_key: str):
     AI 자동 생성 일정의 장소 정보 자동 첨부에 사용됩니다.
     """
     if not api_key or not name:
-        return {"map_url": build_google_search_url(name or "")}
+        return None
     try:
         search_res = requests.get(
             f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={requests.utils.quote(name)}&key={api_key}&language=ko",
@@ -129,7 +129,7 @@ def get_google_place_info_by_name(name: str, api_key: str):
             }
     except Exception as e:
         print(f"Google Place Name Search Error: {e}")
-    return {"map_url": build_google_search_url(name)}
+    return None
 
 def calc_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
     r = 6371000
@@ -1138,7 +1138,7 @@ def add_schedule(room_id: str, sch: ScheduleCreate, x_google_api_key: Optional[s
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
 
     g = get_google_place_info(sch.google_map_url, x_google_api_key)
-    final_content = f"{g['name']} ({sch.content})" if (g and g.get("name")) else sch.content
+    final_content = f"{g.get('name')} ({sch.content})" if (g and g.get("name")) else sch.content
 
     conn = get_db_connection()
     c = conn.cursor()
@@ -1148,7 +1148,7 @@ def add_schedule(room_id: str, sch: ScheduleCreate, x_google_api_key: Optional[s
                (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
         (room_id, sch.day_num, sch.start_time, sch.end_time, final_content, nickname,
          sch.google_map_url, sch.tabelog_url, sch.budget,
-         g['place_id'] if g else None, g['lat'] if g else None, g['lng'] if g else None, g['rating'] if g else None, "",
+         g.get('place_id') if g else None, g.get('lat') if g else None, g.get('lng') if g else None, g.get('rating') if g else None, "",
          room_id, sch.day_num)
     )
     conn.commit()
