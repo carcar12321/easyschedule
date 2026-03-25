@@ -37,6 +37,7 @@ app.add_middleware(
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "easytrip-default-secret-change-in-production")
 ALGORITHM  = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7   # 7일
+TEST_ADMIN_PASSWORD = os.environ.get("EASY_TEST_ADMIN_PASSWORD")
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -55,6 +56,11 @@ def get_db_connection():
 GEMINI_MODEL_MAP = {
     "gemini-3-flash": "gemini-3-flash",
     "gemini-3.1-pro": "gemini-3.1-pro",
+    "gemini-2.5-flash": "gemini-2.5-flash",
+    "gemini-2.5-pro": "gemini-2.5-pro",
+    "gemini-2.0-flash": "gemini-2.0-flash",
+    "gemini-1.5-flash": "gemini-1.5-flash",
+    "gemini-1.5-pro": "gemini-1.5-pro",
 }
 
 # ─────────────────────────────────────────────
@@ -223,7 +229,53 @@ def parse_food_preferences_with_gemini(user_text: str, llm_key: str):
     except Exception:
         return {}
 
-# ─────────────────────────────────────────────
+def build_google_search_url(query: str) -> str:
+    return f"https://www.google.com/maps/search/?api=1&query={requests.utils.quote(query)}"
+
+def is_meal_slot(content_text: str) -> bool:
+    t = (content_text or "").lower()
+    keywords = ["점심", "저녁", "브런치", "아침", "식사", "lunch", "dinner", "breakfast", "meal"]
+    return any(k in t for k in keywords)
+
+def fetch_meal_candidates(api_key: str, city: str, content_text: str, lat: Optional[float], lng: Optional[float], limit: int = 3):
+    if not api_key:
+        return []
+    candidates = []
+    try:
+        if lat is not None and lng is not None:
+            _, nearby = google_places_nearby(api_key, lat, lng, radius=1300, place_type="restaurant", language="ko")
+            candidates.extend(nearby[:10])
+        query = f"{city} {content_text} 맛집".strip()
+        _, ts = google_places_text_search(api_key, query, lat or 0, lng or 0, radius=2500, language="ko")
+        candidates.extend(ts[:10])
+    except Exception:
+        pass
+    seen = set()
+    picked = []
+    for p in candidates:
+        pid = p.get("place_id")
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        rating = p.get("rating")
+        picked.append({
+            "name": p.get("name", "이름 없음"),
+            "rating": rating,
+            "map_url": f"https://www.google.com/maps/place/?q=place_id:{pid}",
+            "reason": f"평점 {rating}점 및 접근성이 비교적 좋아 보여 추천합니다." if rating else "주변 동선 기준으로 접근성이 좋아 보여 추천합니다."
+        })
+        if len(picked) >= limit:
+            break
+    return picked
+
+def parse_route_query(message: str):
+    text = (message or "").strip()
+    m = re.search(r"(.+?)에서\s*(.+?)까지", text)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None, None
+
+# ───────────────────────────────────────────
 # 도시 ↔ 통화 매핑
 # ─────────────────────────────────────────────
 CITY_CURRENCY_MAP = {
@@ -263,7 +315,8 @@ def init_db():
             bookmark_name2   TEXT DEFAULT '',
             bookmark_link2   TEXT DEFAULT '',
             bookmark_name3   TEXT DEFAULT '',
-            bookmark_link3   TEXT DEFAULT ''
+            bookmark_link3   TEXT DEFAULT '',
+            test_admin_pw    TEXT DEFAULT ''
         )
     """)
 
@@ -283,7 +336,8 @@ def init_db():
             place_id        TEXT,
             latitude        FLOAT,
             longitude       FLOAT,
-            rating          FLOAT
+            rating          FLOAT,
+            ai_options_json TEXT DEFAULT ''
         )
     """)
 
@@ -357,6 +411,8 @@ def init_db():
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS latitude FLOAT",
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS longitude FLOAT",
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS rating FLOAT",
+        "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS ai_options_json TEXT DEFAULT ''",
+        "ALTER TABLE room ADD COLUMN IF NOT EXISTS test_admin_pw TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -371,8 +427,7 @@ def init_db():
 @app.on_event("startup")
 def startup_event():
     init_db()
-
-# ─────────────────────────────────────────────
+    # ─────────────────────────────────────────────
 # JWT 유틸 및 인증 로직
 # ─────────────────────────────────────────────
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -472,6 +527,17 @@ class AiScheduleRequest(BaseModel):
     model: Optional[str] = "gemini-2.5-flash"
     keep_existing: Optional[bool] = False
     feedback: Optional[str] = ""
+    target_days: Optional[List[int]] = None
+
+class AiScheduleEditRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = "gemini-2.5-flash"
+    target_days: Optional[List[int]] = None
+
+class OmniAssistantRequest(BaseModel):
+    message: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 class ImportRequest(BaseModel):
     export_code: str
@@ -528,19 +594,24 @@ def serve_frontend(room_id: str = None):
 def login(req: LoginRequest):
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT admin_pw, team_pw FROM room WHERE room_id=%s", (req.room_id,))
+    c.execute("SELECT admin_pw, team_pw, test_admin_pw FROM room WHERE room_id=%s", (req.room_id,))
     row = c.fetchone()
-    c.close()
-    conn.close()
 
     if not row:
+        c.close()
+        conn.close()
         raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
 
-    admin_pw_hash, team_pw_hash = row
+    admin_pw_hash, team_pw_hash, test_admin_pw_hash = row
+    c.close()
+    conn.close()
 
     if verify_pw(req.password, admin_pw_hash):
         role = "admin"
         nickname = "방장"
+    elif test_admin_pw_hash and verify_pw(req.password, test_admin_pw_hash):
+        role = "admin"
+        nickname = "방장(테스트)"
     elif team_pw_hash and verify_pw(req.password, team_pw_hash):
         role = "team"
         if not req.nickname.strip():
@@ -561,10 +632,11 @@ def create_room(room: RoomCreate):
         c = conn.cursor()
         c.execute(
             """INSERT INTO room
-                   (room_id, title, admin_pw, team_pw, city, currency, member_count, is_comment_enabled)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                   (room_id, title, admin_pw, team_pw, city, currency, member_count, is_comment_enabled, test_admin_pw)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (rid, room.title, hash_pw(room.admin_pw), hash_pw(room.team_pw) if room.team_pw else "",
-             room.city or "", currency, room.member_count or 1, room.is_comment_enabled)
+             room.city or "", currency, room.member_count or 1, room.is_comment_enabled,
+             hash_pw(TEST_ADMIN_PASSWORD) if TEST_ADMIN_PASSWORD else "")
         )
         conn.commit()
         c.close()
@@ -609,14 +681,14 @@ def get_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCredentia
     accommodations = [{"id": r[0], "days_applied": [int(x) for x in r[1].split(',') if x], "hotel_name": r[2], "google_map_url": r[3], "has_breakfast": r[4], "budget": r[5]} for r in c.fetchall()]
 
     c.execute(
-        """SELECT id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, rating
+        """SELECT id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, rating, ai_options_json
            FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC, start_time ASC""",
         (room_id,)
     )
     schedules = [
         {"id": r[0], "day_num": r[1], "start_time": r[2], "end_time": r[3], "content": r[4],
          "author": r[5], "google_map_url": r[6] or "", "tabelog_url": r[7] or "", "budget": r[8],
-         "place_id": r[9], "rating": r[10]}
+         "place_id": r[9], "rating": r[10], "ai_options_json": r[11] or ""}
         for r in c.fetchall()
     ]
 
@@ -711,8 +783,8 @@ def export_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCreden
     c.execute("SELECT days_applied, hotel_name, google_map_url, has_breakfast, budget FROM accommodation WHERE room_id=%s", (room_id,))
     accommodations = [{"days_applied": [int(x) for x in r[0].split(',') if x], "hotel_name": r[1], "google_map_url": r[2], "has_breakfast": r[3], "budget": r[4]} for r in c.fetchall()]
 
-    c.execute("SELECT day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC", (room_id,))
-    schedules = [{"day_num": r[0], "start_time": r[1], "end_time": r[2], "content": r[3], "author": r[4], "google_map_url": r[5], "tabelog_url": r[6], "budget": r[7], "place_id": r[8], "latitude": r[9], "longitude": r[10], "rating": r[11], "sort_order": r[12]} for r in c.fetchall()]
+    c.execute("SELECT day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order, ai_options_json FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC", (room_id,))
+    schedules = [{"day_num": r[0], "start_time": r[1], "end_time": r[2], "content": r[3], "author": r[4], "google_map_url": r[5], "tabelog_url": r[6], "budget": r[7], "place_id": r[8], "latitude": r[9], "longitude": r[10], "rating": r[11], "sort_order": r[12], "ai_options_json": r[13] or ""} for r in c.fetchall()]
 
     c.close()
     conn.close()
@@ -761,11 +833,11 @@ def import_room_data(room_id: str, req: ImportRequest, credentials: Optional[HTT
 
     for s in data.get("schedules", []):
         c.execute(
-            """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order, ai_options_json)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (room_id, s.get("day_num"), s.get("start_time"), s.get("end_time"), s.get("content"), s.get("author", "방장"),
              s.get("google_map_url", ""), s.get("tabelog_url", ""), s.get("budget"), s.get("place_id"),
-             s.get("latitude"), s.get("longitude"), s.get("rating"), s.get("sort_order", 0))
+             s.get("latitude"), s.get("longitude"), s.get("rating"), s.get("sort_order", 0), s.get("ai_options_json", ""))
         )
 
     conn.commit()
@@ -785,7 +857,7 @@ def generate_ai_schedule(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
 ):
     role, nickname = get_current_user_info(room_id, credentials)
-    if role not in ("admin", "team"):
+        if role not in ("admin", "team"):
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
 
     if not x_llm_api_key:
@@ -816,17 +888,23 @@ def generate_ai_schedule(
                 + "\n\n위 기존 일정들의 시간대와 절대 겹치지 않도록, 빈 시간대만 새로운 일정으로 채워주세요."
             )
 
+    target_days = sorted(list(set([d for d in (req.target_days or []) if isinstance(d, int) and 1 <= d <= max(1, req.days)])))
+    if not target_days:
+        target_days = list(range(1, req.days + 1))
+
     feedback_text = f"\n\n[사용자 추가 요청사항]: {req.feedback}" if req.feedback and req.feedback.strip() else ""
+    target_days_text = ", ".join([f"{d}일차" for d in target_days])
 
     prompt = f"""당신은 10년차 전문 여행 플래너입니다. 사용자가 방문하는 목적지/도시는 '{req.city}'이며, 총 여행 기간은 {req.days}일입니다.
 {existing_schedule_text}{feedback_text}
+이번 생성 대상은 반드시 [{target_days_text}]만 해당합니다. 다른 일차는 생성하지 마세요.
 
 매일 아침 09:00부터 저녁 시간대까지 식사, 유명 관광지, 적절한 휴식을 배분하여 현지 상황에 맞는 최적의 동선 일정표를 짜주세요.
 각 일정의 'content' 필드에는 구글맵에서 검색 가능한 정확한 장소명(상호명)을 반드시 포함해야 합니다.
 **가장 중요한 제약사항:** 반드시 마크다운(예: ```json 등) 없이 순수한 JSON 배열 포맷으로만 응답을 시작하고 끝내세요.
 
 배열 내 각 JSON 객체는 아래 5개 필드만 포함:
-- "day_num": 정수 (1 부터 {req.days} 까지)
+- "day_num": 정수 (반드시 {target_days} 중 하나)
 - "start_time": "HH:MM" 형태
 - "end_time": "HH:MM" 형태
 - "content": 구체적 장소명(검색 가능한 정확한 상호명 포함) + 짧은 설명
@@ -854,27 +932,32 @@ def generate_ai_schedule(
         for item in ai_data:
             content_text = item.get("content", "자동 생성된 추천 일정")
             day = item.get("day_num", 1)
+            if day not in target_days:
+                continue
 
             # [패치 #2] content에서 장소명 추출하여 구글 Places API 호출
             place_info = None
             if x_google_api_key:
                 place_info = get_google_place_info_by_name(content_text, x_google_api_key)
 
-            map_url = place_info["map_url"] if place_info and place_info.get("map_url") else ""
-            lat     = place_info["lat"]     if place_info else None
-            lng     = place_info["lng"]     if place_info else None
-            rating  = place_info["rating"]  if place_info else None
-            place_id = place_info["place_id"] if place_info else None
+            map_url = place_info.get("map_url") if place_info and place_info.get("map_url") else build_google_search_url(content_text)
+            lat     = place_info.get("lat") if place_info else None
+            lng     = place_info.get("lng") if place_info else None
+            rating  = place_info.get("rating") if place_info else None
+            place_id = place_info.get("place_id") if place_info else None
+            meal_options = []
+            if is_meal_slot(content_text) and x_google_api_key:
+                meal_options = fetch_meal_candidates(x_google_api_key, req.city, content_text, lat, lng, limit=3)
 
             c.execute(
                 """INSERT INTO schedule
                        (room_id, day_num, start_time, end_time, content, author, google_map_url,
-                        budget, place_id, latitude, longitude, rating, sort_order)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        budget, place_id, latitude, longitude, rating, ai_options_json, sort_order)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
                 (room_id, day, item.get("start_time", "09:00"), item.get("end_time", "10:00"),
                  content_text, "🤖 AI", map_url, item.get("budget", 0),
-                 place_id, lat, lng, rating, room_id, day)
+                 place_id, lat, lng, rating, json.dumps(meal_options, ensure_ascii=False), room_id, day)
             )
             inserted_count += 1
 
@@ -888,6 +971,96 @@ def generate_ai_schedule(
         raise HTTPException(status_code=500, detail="AI가 정해진 규칙(순수 JSON)대로 응답하지 못했습니다. 다시 시도해주세요.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 스케줄 생성 중 오류 발생: {str(e)}")
+        @app.post("/room/{room_id}/ai_schedule_edit")
+def edit_ai_schedule(
+    room_id: str,
+    req: AiScheduleEditRequest,
+    x_llm_api_key: Optional[str] = Header(None),
+    x_google_api_key: Optional[str] = Header(None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)
+):
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    if not x_llm_api_key:
+        raise HTTPException(status_code=400, detail="LLM API 키(Gemini 키)가 필요합니다.")
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="수정 요청 프롬프트를 입력해주세요.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    if req.target_days:
+        c.execute(
+            "SELECT id, day_num, start_time, end_time, content, budget FROM schedule WHERE room_id=%s AND author=%s AND day_num = ANY(%s) ORDER BY day_num, sort_order",
+            (room_id, "🤖 AI", req.target_days)
+        )
+    else:
+        c.execute(
+            "SELECT id, day_num, start_time, end_time, content, budget FROM schedule WHERE room_id=%s AND author=%s ORDER BY day_num, sort_order",
+            (room_id, "🤖 AI")
+        )
+    rows = c.fetchall()
+    if not rows:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="수정 가능한 AI 일정이 없습니다.")
+
+    current_items = [{"id": r[0], "day_num": r[1], "start_time": r[2], "end_time": r[3], "content": r[4], "budget": r[5] or 0} for r in rows]
+    allowed_ids = {x["id"] for x in current_items}
+    prompt = f"""아래 AI 일정만 수정해줘. id는 절대 바꾸지 마.
+사용자 요청: {req.prompt}
+출력은 마크다운 없이 JSON 배열로, 각 항목은 id,start_time,end_time,content,budget만 포함.
+현재 일정:
+{json.dumps(current_items, ensure_ascii=False)}"""
+    model_id = GEMINI_MODEL_MAP.get(req.model or "gemini-2.5-flash", "gemini-2.5-flash")
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={x_llm_api_key}"
+
+    try:
+        res = requests.post(api_url, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.4}}, timeout=50)
+        if not res.ok:
+            raise Exception(f"Gemini API 호출 실패: {res.status_code}")
+        text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        text = re.sub(r"^```(json)?\n?|```$", "", text, flags=re.IGNORECASE).strip()
+        edited = json.loads(text)
+        invalid_ids = []
+        for item in edited:
+            sid = item.get("id")
+            if sid not in allowed_ids:
+                invalid_ids.append(sid)
+        if invalid_ids:
+            raise HTTPException(status_code=400, detail=f"AI 수정 결과에 허용되지 않은 일정 ID가 포함되었습니다: {invalid_ids}")
+
+        updated = 0
+        for item in edited:
+            sid = item.get("id")
+            content_text = item.get("content", "")
+            place_info = get_google_place_info_by_name(content_text, x_google_api_key) if (x_google_api_key and content_text) else None
+            map_url = place_info["map_url"] if place_info and place_info.get("map_url") else build_google_search_url(content_text)
+            day_num = next((x["day_num"] for x in current_items if x["id"] == sid), None)
+            options = fetch_meal_candidates(x_google_api_key, "", content_text, place_info.get("lat") if place_info else None, place_info.get("lng") if place_info else None, 3) if (x_google_api_key and is_meal_slot(content_text)) else []
+            c.execute(
+                """UPDATE schedule
+                   SET start_time=%s, end_time=%s, content=%s, budget=%s, google_map_url=%s, place_id=%s, latitude=%s, longitude=%s, rating=%s, ai_options_json=%s
+                   WHERE id=%s AND room_id=%s AND author=%s""",
+                (
+                    item.get("start_time", "09:00"), item.get("end_time", "10:00"), content_text, item.get("budget", 0),
+                    map_url, place_info.get("place_id") if place_info else None, place_info.get("lat") if place_info else None, place_info.get("lng") if place_info else None,
+                    place_info.get("rating") if place_info else None, json.dumps(options, ensure_ascii=False), sid, room_id, "🤖 AI"
+                )
+            )
+            updated += c.rowcount
+        conn.commit()
+        c.close()
+        conn.close()
+        return {"status": "ok", "updated_count": updated}
+    except HTTPException:
+        c.close()
+        conn.close()
+        raise
+    except Exception as e:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"AI 수정 실패: {str(e)}")
 
 # ─────────────────────────────────────────────
 # 항공편 API
@@ -970,17 +1143,17 @@ def add_schedule(room_id: str, sch: ScheduleCreate, x_google_api_key: Optional[s
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
 
     g = get_google_place_info(sch.google_map_url, x_google_api_key)
-    final_content = f"{g['name']} ({sch.content})" if (g and g.get("name")) else sch.content
+    final_content = f"{g.get('name')} ({sch.content})" if (g and g.get("name")) else sch.content
 
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, sort_order)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        """INSERT INTO schedule (room_id, day_num, start_time, end_time, content, author, google_map_url, tabelog_url, budget, place_id, latitude, longitude, rating, ai_options_json, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM schedule WHERE room_id=%s AND day_num=%s))""",
         (room_id, sch.day_num, sch.start_time, sch.end_time, final_content, nickname,
          sch.google_map_url, sch.tabelog_url, sch.budget,
-         g['place_id'] if g else None, g['lat'] if g else None, g['lng'] if g else None, g['rating'] if g else None,
+         g.get('place_id') if g else None, g.get('lat') if g else None, g.get('lng') if g else None, g.get('rating') if g else None, "",
          room_id, sch.day_num)
     )
     conn.commit()
@@ -1342,6 +1515,85 @@ def what_to_eat(req: WhatToEatRequest, x_google_api_key: Optional[str] = Header(
         return {"results": top, "debug": {"used_llm": used_llm, "candidate_count": len(scored)}}
     except Exception as e:
         return {"results": [], "error": f"추천 처리 실패: {str(e)}", "debug": {"used_llm": False, "candidate_count": 0}}
+
+@app.post("/api/omni_assistant")
+def omni_assistant(req: OmniAssistantRequest, x_google_api_key: Optional[str] = Header(None), x_llm_api_key: Optional[str] = Header(None)):
+    if not x_google_api_key:
+        return {"intent": "unknown", "answer": "Google API 키가 없어 처리할 수 없습니다.", "maps_url": "", "routes": [], "places": []}
+    msg = (req.message or "").strip()
+    if not msg:
+        return {"intent": "unknown", "answer": "질문을 입력해주세요.", "maps_url": "", "routes": [], "places": []}
+
+    try:
+        origin_txt, dest_txt = parse_route_query(msg)
+        route_signal = bool(origin_txt and dest_txt) or ("얼마나 걸" in msg) or ("가고 싶" in msg)
+        if route_signal:
+            using_here = any(k in msg for k in ["여기서", "지금 위치", "현재 위치"])
+            origin_candidates = []
+            if using_here and req.lat is not None and req.lng is not None:
+                origin = {"name": "현재 위치", "place_id": "", "lat": req.lat, "lng": req.lng}
+            else:
+                oq = origin_txt or "현재 위치"
+                _, origin_candidates = google_places_text_search(x_google_api_key, oq, req.lat or 0, req.lng or 0, 4000, "ko")
+                origin = origin_candidates[0] if origin_candidates else None
+
+            _, dest_candidates = google_places_text_search(x_google_api_key, dest_txt or msg, req.lat or 0, req.lng or 0, 5000, "ko")
+            dest = dest_candidates[0] if dest_candidates else None
+
+            if not origin or not dest:
+                return {
+                    "intent": "route",
+                    "answer": "출발지/도착지를 충분히 해석하지 못했습니다. 장소명을 더 구체적으로 입력해주세요.",
+                    "maps_url": "",
+                    "routes": [],
+                    "places": [{"name": p.get("name"), "address": p.get("formatted_address"), "map_url": f"https://www.google.com/maps/place/?q=place_id:{p.get('place_id')}"} for p in dest_candidates[:3]]
+                }
+
+            def matrix(mode: str):
+                origin_str = f"{origin.get('lat')},{origin.get('lng')}" if origin.get("name") == "현재 위치" else f"place_id:{origin.get('place_id')}"
+                res = requests.get(
+                    "https://maps.googleapis.com/maps/api/distancematrix/json",
+                    params={"origins": origin_str, "destinations": f"place_id:{dest.get('place_id')}", "mode": mode, "key": x_google_api_key, "language": "ko"},
+                    timeout=8
+                ).json()
+                el = (res.get("rows") or [{}])[0].get("elements", [{}])[0]
+                if el.get("status") != "OK":
+                    return None
+                return {"mode": mode, "duration": el.get("duration", {}).get("text"), "distance": el.get("distance", {}).get("text")}
+
+            routes = [x for x in [matrix("driving"), matrix("transit"), matrix("walking")] if x]
+            origin_name = origin.get("name") or "출발지"
+            dest_name = dest.get("name") or "도착지"
+            origin_q = f"{origin.get('lat')},{origin.get('lng')}" if origin.get("name") == "현재 위치" else f"place_id:{origin.get('place_id')}"
+            maps_url = f"https://www.google.com/maps/dir/?api=1&origin={requests.utils.quote(origin_q)}&destination={requests.utils.quote('place_id:'+dest.get('place_id',''))}"
+            return {
+                "intent": "route",
+                "answer": f"{origin_name} → {dest_name} 이동 정보를 찾았습니다.",
+                "maps_url": maps_url,
+                "routes": routes,
+                "places": [
+                    {"name": origin_name, "address": origin.get("formatted_address") or "현재 위치", "map_url": maps_url},
+                    {"name": dest_name, "address": dest.get("formatted_address") or "", "map_url": f"https://www.google.com/maps/place/?q=place_id:{dest.get('place_id')}"}
+                ]
+            }
+
+        keyword = "온천" if "온천" in msg else ("쇼핑" if "쇼핑" in msg else msg)
+        _, recs = google_places_text_search(x_google_api_key, keyword, req.lat or 0, req.lng or 0, 5000, "ko")
+        places = []
+        for p in recs[:5]:
+            pid = p.get("place_id")
+            places.append({
+                "name": p.get("name"),
+                "rating": p.get("rating"),
+                "address": p.get("formatted_address") or p.get("vicinity"),
+                "map_url": f"https://www.google.com/maps/place/?q=place_id:{pid}",
+                "reason": f"평점 {p.get('rating')}점 및 주변 접근성이 좋아 보여 추천합니다." if p.get("rating") else "질문 키워드와 연관성이 높아 보입니다."
+            })
+        if not places:
+            return {"intent": "recommendation", "answer": "추천 가능한 장소를 찾지 못했습니다. 지역명이나 키워드를 더 구체적으로 입력해주세요.", "maps_url": "", "routes": [], "places": []}
+        return {"intent": "recommendation", "answer": f"'{keyword}' 관련 추천 장소입니다.", "maps_url": places[0]["map_url"], "routes": [], "places": places}
+    except Exception as e:
+        return {"intent": "unknown", "answer": f"처리 중 오류가 발생했습니다: {str(e)}", "maps_url": "", "routes": [], "places": []}
 
 @app.get("/api/travel_time")
 def get_travel_time(origin: str, dest: str, x_google_api_key: Optional[str] = Header(None)):
