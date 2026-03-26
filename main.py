@@ -404,6 +404,7 @@ def init_db():
             edit_pw         TEXT NOT NULL,
             currency        TEXT DEFAULT 'JPY',
             cover_emoji     TEXT DEFAULT '✈️',
+            ai_story        TEXT DEFAULT '',
             created_at      TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -460,6 +461,7 @@ def init_db():
         "ALTER TABLE schedule ADD COLUMN IF NOT EXISTS ai_options_json TEXT DEFAULT ''",
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS test_admin_pw TEXT DEFAULT ''",
         "ALTER TABLE journal ADD COLUMN IF NOT EXISTS cover_emoji TEXT DEFAULT '✈️'",
+        "ALTER TABLE journal ADD COLUMN IF NOT EXISTS ai_story TEXT DEFAULT ''",
         "ALTER TABLE journal_entry ADD COLUMN IF NOT EXISTS was_visited BOOLEAN DEFAULT TRUE",
     ]
     for sql in migrations:
@@ -842,6 +844,91 @@ def export_room_data(room_id: str, credentials: Optional[HTTPAuthorizationCreden
     b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
 
     return {"export_code": b64_str}
+
+@app.get("/room/{room_id}/journal_export")
+def journal_export(room_id: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    """방 데이터를 여행기 앱에 넘길 수 있는 코드로 변환한다. 방장/팀원만 가능."""
+    role, _ = get_current_user_info(room_id, credentials)
+    if role not in ("admin", "team"):
+        raise HTTPException(status_code=403, detail="팀원 이상 권한이 필요합니다.")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("SELECT title, city, currency, member_count FROM room WHERE room_id=%s", (room_id,))
+    row = c.fetchone()
+    if not row:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="방을 찾을 수 없습니다.")
+    room_info = {"title": row[0], "city": row[1], "currency": row[2], "member_count": row[3]}
+
+    c.execute(
+        "SELECT flight_type, airport, flight_num, terminal, departure_time, arrival_time, memo "
+        "FROM flight WHERE room_id=%s ORDER BY departure_time",
+        (room_id,)
+    )
+    flights = [
+        {
+            "flight_type": r[0],
+            "airport": r[1],
+            "flight_num": r[2],
+            "terminal": r[3],
+            "departure_time": r[4],
+            "arrival_time": r[5],
+            "memo": r[6],
+        }
+        for r in c.fetchall()
+    ]
+
+    c.execute(
+        "SELECT days_applied, hotel_name, google_map_url, has_breakfast, budget "
+        "FROM accommodation WHERE room_id=%s",
+        (room_id,)
+    )
+    accommodations = [
+        {
+            "days_applied": [int(x) for x in (r[0] or "").split(',') if x],
+            "hotel_name": r[1],
+            "google_map_url": r[2],
+            "has_breakfast": r[3],
+            "budget": r[4],
+        }
+        for r in c.fetchall()
+    ]
+
+    c.execute(
+        "SELECT day_num, start_time, end_time, content, google_map_url, tabelog_url, budget, rating "
+        "FROM schedule WHERE room_id=%s ORDER BY day_num ASC, sort_order ASC, id ASC",
+        (room_id,)
+    )
+    schedules = [
+        {
+            "day_num": r[0],
+            "start_time": r[1],
+            "end_time": r[2],
+            "content": r[3],
+            "google_map_url": r[4],
+            "tabelog_url": r[5],
+            "budget": r[6],
+            "rating": r[7],
+        }
+        for r in c.fetchall()
+    ]
+
+    c.close()
+    conn.close()
+
+    data = {
+        "source": "easy_schedule_pro",
+        "room_info": room_info,
+        "flights": flights,
+        "accommodations": accommodations,
+        "schedules": schedules,
+    }
+    json_str = json.dumps(data, ensure_ascii=False, default=str)
+    code = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
+    return {"journal_code": code}
 
 @app.post("/room/{room_id}/import")
 def import_room_data(room_id: str, req: ImportRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
@@ -1747,6 +1834,7 @@ class JournalEntryCreate(BaseModel):
     review: str = ""
     memo: str = ""
     was_visited: bool = True
+    sort_order: int = 0
 
 class JournalEntryUpdate(BaseModel):
     actual_budget: Optional[int] = None
@@ -1774,6 +1862,9 @@ class JournalVerify(BaseModel):
 class ImportRoomRequest(BaseModel):
     room_id: str
 
+class AIStoryUpdate(BaseModel):
+    ai_story: str
+
 
 # ─────────────────────────────────────────────
 # 여행기(Travel Journal) — 헬퍼
@@ -1791,7 +1882,7 @@ def get_journal_editor(journal_id: str, credentials: Optional[HTTPAuthorizationC
 
 def fetch_journal_full(c, journal_id: str) -> dict:
     c.execute(
-        "SELECT journal_id, title, city, travel_start, travel_end, author_name, currency, cover_emoji FROM journal WHERE journal_id=%s",
+        "SELECT journal_id, title, city, travel_start, travel_end, author_name, currency, cover_emoji, ai_story FROM journal WHERE journal_id=%s",
         (journal_id,)
     )
     row = c.fetchone()
@@ -1801,12 +1892,15 @@ def fetch_journal_full(c, journal_id: str) -> dict:
         "journal_id": row[0], "title": row[1], "city": row[2],
         "travel_start": row[3], "travel_end": row[4],
         "author_name": row[5], "currency": row[6], "cover_emoji": row[7],
+        "ai_story": row[8] or "",
     }
     c.execute(
-        "SELECT id, day_num, start_time, end_time, place_name, google_map_url, planned_budget, actual_budget, rating, review, memo, was_visited FROM journal_entry WHERE journal_id=%s ORDER BY day_num, sort_order, id",
+        "SELECT id, day_num, start_time, end_time, place_name, google_map_url, planned_budget, actual_budget, rating, review, memo, was_visited, sort_order "
+        "FROM journal_entry WHERE journal_id=%s ORDER BY day_num, sort_order, id",
         (journal_id,)
     )
     entries = c.fetchall()
+    flat_entries = []
     days_map = {}
     for e in entries:
         eid, day_num = e[0], e[1]
@@ -1816,9 +1910,12 @@ def fetch_journal_full(c, journal_id: str) -> dict:
             "id": eid, "start_time": e[2], "end_time": e[3], "place_name": e[4],
             "google_map_url": e[5], "planned_budget": e[6], "actual_budget": e[7],
             "rating": e[8], "review": e[9], "memo": e[10], "was_visited": e[11],
+            "day_num": day_num, "sort_order": e[12],
             "photos": photos
         }
+        flat_entries.append(entry_obj)
         days_map.setdefault(day_num, []).append(entry_obj)
+    meta["entries"] = flat_entries
     meta["days"] = [{"day_num": d, "entries": days_map[d]} for d in sorted(days_map)]
     return meta
 
@@ -1921,14 +2018,29 @@ def add_entry(journal_id: str, req: JournalEntryCreate, credentials: Optional[HT
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO journal_entry (journal_id, day_num, start_time, end_time, place_name, google_map_url, planned_budget, actual_budget, rating, review, memo, was_visited) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-        (journal_id, req.day_num, req.start_time, req.end_time, req.place_name, req.google_map_url, req.planned_budget, req.actual_budget, req.rating, req.review, req.memo, req.was_visited)
+        "INSERT INTO journal_entry (journal_id, day_num, start_time, end_time, place_name, google_map_url, planned_budget, actual_budget, rating, review, memo, was_visited, sort_order) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+        (journal_id, req.day_num, req.start_time, req.end_time, req.place_name, req.google_map_url, req.planned_budget, req.actual_budget, req.rating, req.review, req.memo, req.was_visited, req.sort_order)
     )
     new_id = c.fetchone()[0]
     conn.commit()
     c.close()
     conn.close()
     return {"id": new_id}
+
+@app.patch("/api/journal/{journal_id}/ai_story")
+def save_ai_story(journal_id: str, req: AIStoryUpdate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    payload = decode_token(credentials.credentials) if credentials else None
+    if not payload or payload.get("journal_id") != journal_id or payload.get("role") != "editor":
+        raise HTTPException(status_code=403, detail="편집 권한이 없습니다.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("ALTER TABLE journal ADD COLUMN IF NOT EXISTS ai_story TEXT DEFAULT ''")
+    c.execute("UPDATE journal SET ai_story=%s WHERE journal_id=%s", (req.ai_story, journal_id))
+    conn.commit()
+    c.close()
+    conn.close()
+    return {"status": "ok"}
 
 @app.patch("/api/journal/{journal_id}/entry/{entry_id}")
 def update_entry(journal_id: str, entry_id: int, req: JournalEntryUpdate, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
@@ -1995,68 +2107,10 @@ def delete_photo(journal_id: str, photo_id: int, credentials: Optional[HTTPAutho
 
 @app.post("/api/journal/{journal_id}/ai_draft")
 def ai_draft(journal_id: str, req: JournalAIRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
-    payload = decode_token(credentials.credentials) if credentials else None
-    if not payload or payload.get("journal_id") != journal_id or payload.get("role") != "editor":
-        raise HTTPException(status_code=403, detail="편집 권한이 없습니다.")
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT title, city, travel_start, travel_end, author_name FROM journal WHERE journal_id=%s", (journal_id,))
-    jrow = c.fetchone()
-    if not jrow:
-        c.close(); conn.close()
-        raise HTTPException(status_code=404)
-    title, city, travel_start, travel_end, author_name = jrow
-    c.execute("SELECT day_num, start_time, end_time, place_name, actual_budget, rating, review, was_visited, planned_budget FROM journal_entry WHERE journal_id=%s ORDER BY day_num, sort_order, id", (journal_id,))
-    entries = c.fetchall()
-    c.close()
-    conn.close()
-
-    days_map: dict = {}
-    for e in entries:
-        days_map.setdefault(e[0], []).append(e)
-
-    entry_text = ""
-    for d in sorted(days_map):
-        entry_text += f"\n### Day {d}\n"
-        for e in days_map[d]:
-            stars = "★" * e[5] + "☆" * (5 - e[5]) if e[5] else "미평가"
-            visited = "방문함" if e[7] else "방문 안 함"
-            actual = f"¥{e[4]}" if e[4] is not None else "미입력"
-            planned = f"¥{e[8]}" if e[8] is not None else "미설정"
-            entry_text += f"- [{e[1]}~{e[2]}] {e[3]} | {stars} | {visited} | 계획:{planned} 실제:{actual} | 후기:{e[6] or '없음'}\n"
-
-    prompt = f"""당신은 감성적인 여행기 작가입니다.
-아래 여행 데이터를 바탕으로 {req.style} 스타일의 여행기를 한국어로 작성해주세요.
-
-여행 정보:
-- 제목: {title}
-- 도시: {city}
-- 기간: {travel_start} ~ {travel_end}
-- 작성자: {author_name}
-
-일정별 방문 기록:
-{entry_text}
-
-작성 규칙:
-- 각 날짜를 ## Day N 섹션으로 구분
-- 별점 1~2점 장소는 아쉬웠던 점 위주로 솔직하게
-- 별점 4~5점 장소는 추천 포인트 강조
-- was_visited=false 항목은 "방문하지 못했지만..." 으로 언급
-- 예산을 초과한 항목이 있으면 솔직히 언급
-- 마지막에 ## 총 소감 섹션 한 단락 추가"""
-
-    model_id = GEMINI_MODEL_MAP.get(req.model, req.model)
-    try:
-        res = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={req.gemini_api_key}",
-            json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.7}},
-            timeout=60
-        )
-        if not res.ok:
-            raise HTTPException(status_code=502, detail=f"Gemini API 오류: {res.text}")
-        draft = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return {"draft": draft}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    # 직접 AI API 호출 방식은 비활성화되었습니다.
+    # 프런트엔드에서 여행 기록을 프롬프트로 직렬화해 클립보드로 복사한 뒤,
+    # 사용자가 Claude.ai / ChatGPT 등에 붙여넣는 방식으로 대체합니다.
+    raise HTTPException(
+        status_code=410,
+        detail="직접 AI 호출 기능은 비활성화되었습니다. 프런트엔드의 프롬프트 복사 기능을 사용해주세요.",
+    )

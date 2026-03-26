@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Easy Journal Pro</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Noto Sans KR', sans-serif; background: #f1f5f9; color: #0f172a; }
+    button, input, textarea, select { font: inherit; }
+    .top { position: sticky; top: 0; z-index: 20; background: #111827; color: white; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; box-shadow: 0 8px 20px rgba(0,0,0,.15); }
+    .top strong { cursor: pointer; }
+    .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill, .btn { border: none; border-radius: 12px; padding: 10px 14px; font-weight: 800; cursor: pointer; text-decoration: none; }
+    .pill { background: rgba(255,255,255,.12); color: white; }
+    .btn-primary { background: #0f766e; color: white; }
+    .btn-blue { background: #2563eb; color: white; }
+    .btn-violet { background: #7c3aed; color: white; }
+    .btn-slate { background: #e2e8f0; color: #0f172a; }
+    .btn-rose { background: #fee2e2; color: #be123c; }
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+    .hero { background: linear-gradient(135deg,#1a1a2e 0%,#16213e 40%,#0f3460 70%,#533483 100%); color: white; padding: 44px 22px; border-radius: 24px; text-align: center; box-shadow: 0 12px 32px rgba(15,23,42,.16); }
+    .hero span { display: block; font-size: 3.4rem; margin-bottom: 12px; }
+    .hero h1 { margin: 0 0 8px; font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 900; }
+    .hero p { margin: 0; opacity: .85; }
+    .banner, .card, .day, .flight, .empty { background: white; border-radius: 20px; box-shadow: 0 8px 28px rgba(15,23,42,.08); margin-top: 18px; }
+    .banner { display: none; padding: 18px; border: 1px solid #99f6e4; background: linear-gradient(135deg,#ecfeff,#f0fdfa); }
+    .card { padding: 22px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 20px; }
+    .mode { text-align: center; cursor: pointer; border: 2px solid transparent; transition: .15s; }
+    .mode:hover { transform: translateY(-3px); border-color: #7dd3fc; }
+    .mode span { display: block; font-size: 2.4rem; margin-bottom: 10px; }
+    .mode h3 { margin: 0 0 8px; font-size: 1.1rem; }
+    .mode p { margin: 0; color: #64748b; font-size: .92rem; line-height: 1.6; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .fields2, .fields3 { display: grid; gap: 12px; }
+    .fields2 { grid-template-columns: repeat(2,1fr); }
+    .fields3 { grid-template-columns: repeat(3,1fr); }
+    label { display: block; font-size: .84rem; color: #475569; font-weight: 700; margin-bottom: 6px; }
+    input, textarea, select { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 12px; background: white; }
+    textarea { min-height: 110px; resize: vertical; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    #editor { display: none; }
+    .toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+    .toolbar .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .chip { padding: 9px 14px; border-radius: 999px; font-weight: 800; font-size: .88rem; background: #e0f2fe; color: #075985; }
+    .note { display: none; margin-top: 18px; padding: 14px 16px; border-radius: 16px; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; line-height: 1.7; }
+    .flight-head, .day-head { color: white; padding: 16px 20px; font-weight: 900; }
+    .flight-head { background: linear-gradient(90deg,#2d3748,#4a5568); }
+    .flight-grid { display: grid; grid-template-columns: repeat(2,1fr); }
+    .flight-card { padding: 20px; border-right: 1px solid #e2e8f0; }
+    .flight-card:last-child { border-right: none; }
+    .time { font-size: 1.6rem; font-weight: 900; }
+    .sub { color: #94a3b8; font-size: .78rem; margin-top: 6px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; background: #f1f5f9; font-size: .76rem; font-weight: 800; }
+    .days { display: grid; gap: 18px; margin-top: 18px; }
+    .timeline { padding: 18px; display: grid; gap: 14px; }
+    .entry { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; }
+    .entry-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .entry-top h3 { margin: 0 0 6px; font-size: 1rem; }
+    .meta { color: #64748b; font-size: .84rem; line-height: 1.6; }
+    .tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ctl { display: grid; gap: 10px; margin-top: 10px; }
+    .map { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: #eff6ff; color: #1d4ed8; text-decoration: none; font-size: .82rem; font-weight: 800; }
+    .empty { text-align: center; padding: 36px 20px; color: #64748b; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.6); z-index: 100; justify-content: center; align-items: center; padding: 20px; }
+    .modal-box { width: min(680px,100%); background: white; border-radius: 22px; padding: 24px; box-shadow: 0 18px 50px rgba(15,23,42,.28); }
+    .modal-box textarea { min-height: 240px; }
+    @keyframes fadeInUp { from { opacity: 0; transform: translate(-50%,18px); } to { opacity: 1; transform: translate(-50%,0); } }
+    @media (max-width: 860px) { .grid3, .fields2, .fields3, .flight-grid { grid-template-columns: 1fr; } .flight-card { border-right: none; border-bottom: 1px solid #e2e8f0; } .flight-card:last-child { border-bottom: none; } .entry-top { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <strong onclick="goLanding()">✈️ Easy Journal Pro</strong>
+    <div class="top-actions">
+      <a href="/" class="pill">계획 앱</a>
+      <button class="pill" onclick="goLanding()">랜딩</button>
+    </div>
+  </div>
+
+  <div class="page">
+    <section id="landing">
+      <div class="hero">
+        <span>✈️</span>
+        <h1>Easy Journal Pro</h1>
+        <p>나의 여행 이야기를 기록하고 공유하세요</p>
+      </div>
+
+      <div id="autoBanner" class="banner">
+        <div>📦 <strong id="autoTitle">여행 계획</strong> 데이터를 발견했습니다. 이 데이터로 여행기를 시작할까요?</div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="autoImportFromRoom()">이 데이터로 여행기 시작하기</button>
+          <button class="btn btn-slate" onclick="dismissBanner()">무시하기</button>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card mode" onclick="showPanel('newPanel')">
+          <span>✏️</span><h3>새 여행기 작성</h3><p>처음부터 직접 작성</p>
+        </div>
+        <div class="card mode" onclick="showPanel('importPanel')">
+          <span>📥</span><h3>여행계획 코드로 불러오기</h3><p>Easy Schedule Pro 코드 사용</p>
+        </div>
+        <div class="card mode" onclick="showPanel('openPanel')">
+          <span>📂</span><h3>기존 여행기 열기</h3><p>journal ID + 비밀번호</p>
+        </div>
+      </div>
+
+      <div id="newPanel" class="card panel">
+        <h2 style="margin:0 0 8px;">새 여행기 작성</h2>
+        <p style="margin:0 0 16px;color:#64748b;">독립형 여행기입니다. 일정은 편집 화면에서 직접 추가할 수 있습니다.</p>
+        <div class="fields2">
+          <div><label for="newTitle">제목</label><input id="newTitle" placeholder="예: 봄날의 후쿠오카 산책"></div>
+          <div><label for="newCity">여행지</label><input id="newCity" placeholder="예: 후쿠오카"></div>
+        </div>
+        <div class="fields2" style="margin-top:12px;">
+          <div><label for="newStart">여행 시작일</label><input id="newStart" type="date"></div>
+          <div><label for="newEnd">여행 종료일</label><input id="newEnd" type="date"></div>
+        </div>
+        <div class="fields2" style="margin-top:12px;">
+          <div><label for="newAuthor">작성자</label><input id="newAuthor" value="여행자"></div>
+          <div><label for="newPw">수정 비밀번호</label><input id="newPw" type="password" placeholder="4자 이상"></div>
+        </div>
+        <div class="fields2" style="margin-top:12px;">
+          <div><label for="newCurrency">통화</label><select id="newCurrency"><option>JPY</option><option>KRW</option><option>USD</option><option>EUR</option></select></div>
+          <div><label for="newEmoji">커버 이모지</label><input id="newEmoji" value="✈️"></div>
+        </div>
+        <div class="actions"><button class="btn btn-blue" onclick="submitNewJournal()">여행기 만들기</button><button class="btn btn-slate" onclick="hidePanels()">닫기</button></div>
+      </div>
+
+      <div id="importPanel" class="card panel">
+        <h2 style="margin:0 0 8px;">여행계획 코드로 불러오기</h2>
+        <p style="margin:0 0 16px;color:#64748b;">Easy Schedule Pro에서 생성한 `journal_code`를 붙여넣으세요.</p>
+        <label for="importCode">여행 코드</label>
+        <textarea id="importCode" placeholder="여기에 코드를 붙여넣으세요."></textarea>
+        <div class="actions"><button class="btn btn-primary" onclick="createJournalFromCode(document.getElementById('importCode').value)">코드로 시작하기</button><button class="btn btn-slate" onclick="hidePanels()">닫기</button></div>
+      </div>
+
+      <div id="openPanel" class="card panel">
+        <h2 style="margin:0 0 8px;">기존 여행기 열기</h2>
+        <p style="margin:0 0 16px;color:#64748b;">수정하려면 비밀번호 확인이 필요합니다.</p>
+        <div class="fields2">
+          <div><label for="openId">Journal ID</label><input id="openId" maxlength="6" placeholder="예: a1b2c3"></div>
+          <div><label for="openPw">비밀번호</label><input id="openPw" type="password"></div>
+        </div>
+        <div class="actions"><button class="btn btn-blue" onclick="openExistingJournal()">열기</button><button class="btn btn-slate" onclick="hidePanels()">닫기</button></div>
+      </div>
+    </section>
+
+    <section id="editor">
+      <div class="hero">
+        <span id="heroEmoji">✈️</span>
+        <h1 id="heroTitle">여행기 제목</h1>
+        <p id="heroMeta">여행 정보</p>
+      </div>
+
+      <div class="toolbar">
+        <div class="row">
+          <div id="editorChip" class="chip">읽기 전용</div>
+          <button class="btn btn-slate" onclick="toggleComposer()">일정 추가</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-violet" onclick="copyAIPrompt()">🤖 AI에게 꾸며달라고 하기</button>
+          <button class="btn btn-blue" onclick="downloadJournalHTML()">📄 HTML로 내보내기</button>
+        </div>
+      </div>
+
+      <div id="readonlyNote" class="note">현재 이 여행기는 읽기 전용입니다. 수정하려면 랜딩에서 `기존 여행기 열기`로 비밀번호를 확인해 주세요.</div>
+
+      <div id="composer" class="card" style="display:none;">
+        <h2 style="margin:0 0 8px;">일정 수동 추가</h2>
+        <p style="margin:0 0 16px;color:#64748b;">새 여행기나 자동 불러오기 후 보강할 내용을 직접 추가할 수 있습니다.</p>
+        <div class="fields3">
+          <div><label for="entryDay">Day</label><input id="entryDay" type="number" min="1" value="1"></div>
+          <div><label for="entryStart">시작 시간</label><input id="entryStart" type="time"></div>
+          <div><label for="entryEnd">종료 시간</label><input id="entryEnd" type="time"></div>
+        </div>
+        <div class="fields2" style="margin-top:12px;">
+          <div><label for="entryPlace">장소명</label><input id="entryPlace" placeholder="예: 텐진 지하상가"></div>
+          <div><label for="entryMap">구글맵 링크</label><input id="entryMap" placeholder="https://maps.google.com/..."></div>
+        </div>
+        <div class="fields2" style="margin-top:12px;">
+          <div><label for="entryPlanned">예정 지출</label><input id="entryPlanned" type="number" placeholder="숫자만"></div>
+          <div><label for="entryVisited">방문 여부</label><select id="entryVisited"><option value="true">방문함</option><option value="false">방문 못 함</option></select></div>
+        </div>
+        <div class="actions"><button class="btn btn-primary" onclick="addJournalEntry()">추가하기</button><button class="btn btn-slate" onclick="toggleComposer(false)">닫기</button></div>
+      </div>
+
+      <div id="flightBox" class="flight" style="display:none;">
+        <div class="flight-head">✈️ 항공편 정보</div>
+        <div id="flightGrid" class="flight-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin:0 0 8px;">📝 AI가 꾸며준 여행기 붙여넣기</h2>
+        <p style="margin:0 0 16px;color:#64748b;">Claude.ai / ChatGPT에서 받은 여행기 텍스트를 저장하면 HTML 출력에도 포함됩니다.</p>
+        <textarea id="aiStoryInput" placeholder="AI가 작성해준 여행기를 여기에 붙여넣으세요..."></textarea>
+        <div class="actions"><button class="btn btn-violet" onclick="saveAIStory()">💾 저장</button></div>
+      </div>
+
+      <div id="days" class="days"></div>
+    </section>
+  </div>
+
+  <div id="promptModal" class="modal">
+    <div class="modal-box">
+      <h3 style="margin:0 0 8px;">🤖 AI 여행기 프롬프트</h3>
+      <p style="margin:0 0 14px;color:#64748b;line-height:1.7;">클립보드 복사에 실패했습니다. 아래 내용을 전체 복사한 뒤 [Claude.ai](https://claude.ai) 또는 ChatGPT에 붙여넣어 사용하세요.</p>
+      <textarea id="promptText" readonly></textarea>
+      <div class="actions"><button class="btn btn-violet" onclick="copyPromptFromModal()">📋 전체 복사</button><button class="btn btn-slate" onclick="document.getElementById('promptModal').style.display='none'">닫기</button></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "";
+    const dayColors = [
+      "linear-gradient(135deg,#2b6cb0,#2c5282)",
+      "linear-gradient(135deg,#276749,#22543d)",
+      "linear-gradient(135deg,#553c9a,#44337a)",
+      "linear-gradient(135deg,#c05621,#9c4221)",
+      "linear-gradient(135deg,#2c7a7b,#285e61)"
+    ];
+    let currentJournalId = "";
+    let currentJournalData = null;
+    let pendingImportCode = "";
+
+    document.addEventListener("DOMContentLoaded", initApp);
+
+    function initApp() {
+      const routeId = getRouteJournalId();
+      if (routeId && getJournalToken(routeId)) return loadJournal(routeId);
+      if (routeId) { showPanel("openPanel"); document.getElementById("openId").value = routeId; }
+      inspectAutoImport();
+    }
+
+    function getRouteJournalId() {
+      const match = location.pathname.match(/^\/journal\/([a-z0-9]{6})$/i);
+      return match ? match[1] : "";
+    }
+
+    function getJournalToken(id) { return localStorage.getItem(`journal_token_${id}`) || ""; }
+    function isEditor() { return Boolean(currentJournalId && getJournalToken(currentJournalId)); }
+    function goLanding() {
+      currentJournalId = "";
+      currentJournalData = null;
+      document.getElementById("landing").style.display = "block";
+      document.getElementById("editor").style.display = "none";
+      hidePanels();
+      inspectAutoImport();
+      if (location.pathname !== "/journal") history.replaceState({}, "", "/journal");
+    }
+    function showPanel(id) { hidePanels(); document.getElementById(id).classList.add("active"); }
+    function hidePanels() { document.querySelectorAll(".panel").forEach((el) => el.classList.remove("active")); }
+    function dismissBanner() { document.getElementById("autoBanner").style.display = "none"; }
+    function esc(v) { return String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+    function safeUrl(v) { try { const u = new URL(v, location.origin); return /^https?:$/i.test(u.protocol) ? u.href : ""; } catch { return ""; } }
+    function toNum(v) { if (v === "" || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+    function normalizeRating(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : 0; }
+    function sortEntries(entries) { return [...entries].sort((a,b) => (a.day_num||0)-(b.day_num||0) || (a.sort_order||0)-(b.sort_order||0) || (a.id||0)-(b.id||0)); }
+    function flattenDays(days) { return (days || []).flatMap((d) => (d.entries || []).map((e) => ({ ...e, day_num: d.day_num }))); }
+    function buildMeta(d) {
+      const parts = [];
+      if (d.city) parts.push(d.city);
+      if (d.travel_start || d.travel_end) parts.push(`${d.travel_start || "미정"} ~ ${d.travel_end || "미정"}`);
+      if (d.author_name) parts.push(`작성자 ${d.author_name}`);
+      return parts.join(" · ");
+    }
+
+    function decodeJournalCode(code, alertOnFail = true) {
+      try {
+        const bin = atob((code || "").trim());
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        return JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        if (alertOnFail) alert("유효하지 않은 코드입니다.");
+        return null;
+      }
+    }
+
+    function inferDates(flights) {
+      const dates = (flights || [])
+        .flatMap((f) => [f.departure_time, f.arrival_time])
+        .filter(Boolean)
+        .map((v) => (String(v).match(/\d{4}-\d{2}-\d{2}/) || [])[0])
+        .filter(Boolean)
+        .sort();
+      return { travel_start: dates[0] || "", travel_end: dates[dates.length - 1] || "" };
+    }
+
+    function inspectAutoImport() {
+      pendingImportCode = sessionStorage.getItem("journal_import_code") || "";
+      const banner = document.getElementById("autoBanner");
+      const decoded = decodeJournalCode(pendingImportCode, false);
+      if (!decoded || !decoded.room_info) {
+        banner.style.display = "none";
+        return;
+      }
+      document.getElementById("autoTitle").textContent = `${decoded.room_info.title || "여행"} 여행`;
+      banner.style.display = "block";
+    }
+
+    async function submitNewJournal() {
+      const payload = {
+        title: document.getElementById("newTitle").value.trim(),
+        city: document.getElementById("newCity").value.trim(),
+        travel_start: document.getElementById("newStart").value,
+        travel_end: document.getElementById("newEnd").value,
+        author_name: document.getElementById("newAuthor").value.trim() || "여행자",
+        edit_pw: document.getElementById("newPw").value.trim(),
+        currency: document.getElementById("newCurrency").value,
+        cover_emoji: document.getElementById("newEmoji").value.trim() || "✈️"
+      };
+      if (!payload.title) return alert("제목을 입력해주세요.");
+      if (!payload.edit_pw || payload.edit_pw.length < 4) return alert("비밀번호를 4자 이상 입력해주세요.");
+      const res = await fetch("/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert("여행기 생성에 실패했습니다.");
+      const data = await res.json();
+      localStorage.setItem(`journal_token_${data.journal_id}`, data.token);
+      await loadJournal(data.journal_id);
+      showToast("새 여행기가 생성되었습니다.");
+    }
+
+    async function createJournalFromCode(code) {
+      const data = decodeJournalCode(code);
+      if (!data || data.source !== "easy_schedule_pro") return alert("Easy Schedule Pro에서 생성된 코드가 아닙니다.");
+      const pw = prompt("이 여행기를 수정할 비밀번호를 설정하세요 (4자 이상):");
+      if (!pw || pw.length < 4) return alert("비밀번호를 4자 이상 입력해주세요.");
+      const dates = inferDates(data.flights);
+      const createRes = await fetch("/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: data.room_info?.title || "여행기",
+          city: data.room_info?.city || "",
+          currency: data.room_info?.currency || "JPY",
+          travel_start: dates.travel_start,
+          travel_end: dates.travel_end,
+          edit_pw: pw
+        })
+      });
+      if (!createRes.ok) return alert("여행기 생성에 실패했습니다.");
+      const created = await createRes.json();
+      localStorage.setItem(`journal_token_${created.journal_id}`, created.token);
+      const auth = { "Content-Type": "application/json", "Authorization": `Bearer ${created.token}` };
+      for (const f of data.flights || []) {
+        const rawType = String(f.flight_type || "");
+        const lowerType = rawType.toLowerCase();
+        const isDepart = lowerType === "depart" || rawType === "출국";
+        await fetch(`/api/journal/${created.journal_id}/entry`, {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({
+            day_num: isDepart ? 0 : 999,
+            start_time: f.departure_time || "",
+            end_time: f.arrival_time || "",
+            place_name: `✈️ ${f.flight_num || ""} ${isDepart ? "출국" : "귀국"} (${f.airport || ""})`.trim(),
+            planned_budget: 0,
+            memo: f.memo || "",
+            sort_order: isDepart ? 0 : 9999
+          })
+        });
+      }
+      const schedules = data.schedules || [];
+      for (let i = 0; i < schedules.length; i += 1) {
+        const s = schedules[i];
+        await fetch(`/api/journal/${created.journal_id}/entry`, {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({
+            day_num: Number(s.day_num || 1),
+            start_time: s.start_time || "",
+            end_time: s.end_time || "",
+            place_name: s.content || "일정",
+            google_map_url: s.google_map_url || "",
+            planned_budget: toNum(s.budget),
+            rating: normalizeRating(s.rating),
+            sort_order: i
+          })
+        });
+      }
+      sessionStorage.removeItem("journal_import_code");
+      pendingImportCode = "";
+      await loadJournal(created.journal_id);
+      showToast("여행 계획을 불러왔습니다.");
+    }
+
+    async function autoImportFromRoom() {
+      if (!pendingImportCode) return alert("자동 불러올 코드가 없습니다.");
+      await createJournalFromCode(pendingImportCode);
+    }
+
+    async function openExistingJournal() {
+      const journalId = document.getElementById("openId").value.trim().toLowerCase();
+      const pw = document.getElementById("openPw").value;
+      if (journalId.length !== 6) return alert("6자리 Journal ID를 입력해주세요.");
+      if (!pw) return alert("비밀번호를 입력해주세요.");
+      const res = await fetch(`/api/journal/${journalId}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edit_pw: pw })
+      });
+      if (!res.ok) return alert("Journal ID 또는 비밀번호가 올바르지 않습니다.");
+      const data = await res.json();
+      localStorage.setItem(`journal_token_${journalId}`, data.token);
+      await loadJournal(journalId);
+      showToast("여행기를 불러왔습니다.");
+    }
+
+    async function loadJournal(journalId) {
+      const res = await fetch(`/api/journal/${journalId}`);
+      if (!res.ok) return alert("여행기를 불러오지 못했습니다.");
+      const data = await res.json();
+      currentJournalId = journalId;
+      currentJournalData = { ...data, entries: sortEntries(data.entries || flattenDays(data.days)) };
+      document.getElementById("landing").style.display = "none";
+      document.getElementById("editor").style.display = "block";
+      document.getElementById("heroEmoji").textContent = currentJournalData.cover_emoji || "✈️";
+      document.getElementById("heroTitle").textContent = currentJournalData.title || "여행기";
+      document.getElementById("heroMeta").textContent = buildMeta(currentJournalData);
+      document.getElementById("aiStoryInput").value = currentJournalData.ai_story || "";
+      const editable = isEditor();
+      const chip = document.getElementById("editorChip");
+      chip.textContent = editable ? "편집 가능" : "읽기 전용";
+      chip.style.background = editable ? "#dcfce7" : "#e0f2fe";
+      chip.style.color = editable ? "#166534" : "#075985";
+      document.getElementById("readonlyNote").style.display = editable ? "none" : "block";
+      document.getElementById("composer").style.display = "none";
+      renderFlights();
+      renderDays();
+      history.replaceState({}, "", `/journal/${journalId}`);
+    }
+
+    function renderFlights() {
+      const flights = currentJournalData.entries.filter((e) => e.day_num === 0 || e.day_num === 999);
+      const depart = flights.find((e) => e.day_num === 0);
+      const ret = flights.find((e) => e.day_num === 999);
+      const box = document.getElementById("flightBox");
+      if (!depart && !ret) {
+        box.style.display = "none";
+        document.getElementById("flightGrid").innerHTML = "";
+        return;
+      }
+      box.style.display = "block";
+      document.getElementById("flightGrid").innerHTML = [depart, ret].filter(Boolean).map((f) => {
+        const isDepart = f.day_num === 0;
+        return `<div class="flight-card"><div style="font-size:.78rem;font-weight:900;color:#64748b;margin-bottom:10px;">${isDepart ? "🛫 출국" : "🛬 귀국"}</div><div style="display:flex;align-items:center;gap:12px;"><div><div class="time">${esc(f.start_time || "--:--")}</div><div class="sub">${esc(isDepart ? f.place_name : "")}</div></div><div style="flex:1;text-align:center;"><span class="badge" style="background:linear-gradient(90deg,#4299e1,#805ad5);color:white;">항공편</span></div><div><div class="time">${esc(f.end_time || "--:--")}</div><div class="sub">${esc(!isDepart ? f.place_name : "")}</div></div></div></div>`;
+      }).join("");
+    }
+
+    function renderDays() {
+      const daysEl = document.getElementById("days");
+      const normals = currentJournalData.entries.filter((e) => e.day_num > 0 && e.day_num < 999);
+      if (!normals.length) {
+        daysEl.innerHTML = `<div class="empty">아직 등록된 일정이 없습니다. 위의 <strong>일정 추가</strong> 버튼으로 첫 기록을 시작해보세요.</div>`;
+        return;
+      }
+      const map = {};
+      normals.forEach((e) => {
+        if (!map[e.day_num]) map[e.day_num] = [];
+        map[e.day_num].push(e);
+      });
+      daysEl.innerHTML = Object.keys(map).map(Number).sort((a,b) => a-b).map((day, idx) => `<div class="day"><div class="day-head" style="background:${dayColors[idx % dayColors.length]}">DAY ${day}</div><div class="timeline">${map[day].map(renderEntry).join("")}</div></div>`).join("");
+    }
+
+    function renderEntry(e) {
+      const editable = isEditor();
+      const mapLink = safeUrl(e.google_map_url);
+      const planned = e.planned_budget != null ? `${Number(e.planned_budget).toLocaleString()} ${esc(currentJournalData.currency || "")}` : "미정";
+      const stars = e.rating ? `${"★".repeat(e.rating)}${"☆".repeat(5 - e.rating)}` : "미평가";
+      return `<div class="entry"><div class="entry-top"><div><h3>${esc(e.place_name || "일정")}</h3><div class="meta">${esc(e.start_time || "--:--")} ~ ${esc(e.end_time || "--:--")}</div></div><div class="tag-row"><span class="badge">예정 ${planned}</span><span class="badge">${e.was_visited === false ? "방문 못 함" : "방문함"}</span><span class="badge">${stars}</span>${mapLink ? `<a class="map" href="${mapLink}" target="_blank" rel="noopener">📍 지도</a>` : ""}</div></div><div class="ctl"><div class="fields3"><div><label for="place_${e.id}">장소명</label><input id="place_${e.id}" value="${esc(e.place_name || "")}" ${editable ? "" : "disabled"}></div><div><label for="start_${e.id}">시작 시간</label><input id="start_${e.id}" value="${esc(e.start_time || "")}" ${editable ? "" : "disabled"}></div><div><label for="end_${e.id}">종료 시간</label><input id="end_${e.id}" value="${esc(e.end_time || "")}" ${editable ? "" : "disabled"}></div></div><div class="fields3"><div><label for="actual_${e.id}">실제 지출</label><input id="actual_${e.id}" type="number" value="${esc(e.actual_budget != null ? e.actual_budget : "")}" ${editable ? "" : "disabled"}></div><div><label for="rating_${e.id}">별점</label><select id="rating_${e.id}" ${editable ? "" : "disabled"}>${[0,1,2,3,4,5].map((n) => `<option value="${n}" ${Number(e.rating || 0) === n ? "selected" : ""}>${n === 0 ? "미평가" : `${n}점`}</option>`).join("")}</select></div><div><label for="visited_${e.id}">방문 여부</label><select id="visited_${e.id}" ${editable ? "" : "disabled"}><option value="true" ${e.was_visited !== false ? "selected" : ""}>방문함</option><option value="false" ${e.was_visited === false ? "selected" : ""}>방문 못 함</option></select></div></div><div><label for="review_${e.id}">후기</label><textarea id="review_${e.id}" ${editable ? "" : "disabled"}>${esc(e.review || "")}</textarea></div><div><label for="memo_${e.id}">메모</label><textarea id="memo_${e.id}" ${editable ? "" : "disabled"}>${esc(e.memo || "")}</textarea></div></div>${editable ? `<div class="actions"><button class="btn btn-primary" onclick="saveEntry(${e.id})">저장</button><button class="btn btn-rose" onclick="deleteEntry(${e.id})">삭제</button></div>` : `<div style="margin-top:10px;color:#64748b;font-size:.84rem;">읽기 전용 상태입니다.</div>`}</div>`;
+    }
+
+    function toggleComposer(forceValue) {
+      if (!isEditor()) return alert("편집 권한이 필요합니다.");
+      const el = document.getElementById("composer");
+      const show = typeof forceValue === "boolean" ? forceValue : el.style.display === "none";
+      el.style.display = show ? "block" : "none";
+    }
+
+    async function addJournalEntry() {
+      if (!isEditor()) return alert("편집 권한이 없습니다.");
+      const payload = {
+        day_num: Number(document.getElementById("entryDay").value || 1),
+        start_time: document.getElementById("entryStart").value,
+        end_time: document.getElementById("entryEnd").value,
+        place_name: document.getElementById("entryPlace").value.trim(),
+        google_map_url: document.getElementById("entryMap").value.trim(),
+        planned_budget: toNum(document.getElementById("entryPlanned").value),
+        was_visited: document.getElementById("entryVisited").value === "true"
+      };
+      if (!payload.place_name) return alert("장소명을 입력해주세요.");
+      const res = await fetch(`/api/journal/${currentJournalId}/entry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getJournalToken(currentJournalId)}` },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert("일정 추가에 실패했습니다.");
+      ["entryPlace", "entryMap", "entryPlanned", "entryStart", "entryEnd"].forEach((id) => { document.getElementById(id).value = ""; });
+      await loadJournal(currentJournalId);
+      showToast("일정이 추가되었습니다.");
+    }
+
+    async function saveEntry(id) {
+      if (!isEditor()) return alert("편집 권한이 없습니다.");
+      const payload = {
+        place_name: document.getElementById(`place_${id}`).value.trim(),
+        start_time: document.getElementById(`start_${id}`).value.trim(),
+        end_time: document.getElementById(`end_${id}`).value.trim(),
+        actual_budget: toNum(document.getElementById(`actual_${id}`).value),
+        rating: Number(document.getElementById(`rating_${id}`).value || 0),
+        review: document.getElementById(`review_${id}`).value.trim(),
+        memo: document.getElementById(`memo_${id}`).value.trim(),
+        was_visited: document.getElementById(`visited_${id}`).value === "true"
+      };
+      const res = await fetch(`/api/journal/${currentJournalId}/entry/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getJournalToken(currentJournalId)}` },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) return alert("저장에 실패했습니다.");
+      await loadJournal(currentJournalId);
+      showToast("일정을 저장했습니다.");
+    }
+
+    async function deleteEntry(id) {
+      if (!isEditor()) return alert("편집 권한이 없습니다.");
+      if (!confirm("이 일정을 삭제할까요?")) return;
+      const res = await fetch(`/api/journal/${currentJournalId}/entry/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${getJournalToken(currentJournalId)}` }
+      });
+      if (!res.ok) return alert("삭제에 실패했습니다.");
+      await loadJournal(currentJournalId);
+      showToast("일정을 삭제했습니다.");
+    }
+
+    async function saveAIStory() {
+      if (!currentJournalId) return alert("먼저 여행기를 열어주세요.");
+      if (!isEditor()) return alert("편집 권한이 필요합니다.");
+      const story = document.getElementById("aiStoryInput").value.trim();
+      if (!story) return alert("내용을 입력해주세요.");
+      const res = await fetch(`/api/journal/${currentJournalId}/ai_story`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getJournalToken(currentJournalId)}` },
+        body: JSON.stringify({ ai_story: story })
+      });
+      if (!res.ok) return alert("AI 여행기 저장에 실패했습니다.");
+      currentJournalData.ai_story = story;
+      showToast("AI 여행기를 저장했습니다.");
+    }
+
+    async function copyAIPrompt() {
+      if (!currentJournalData) return alert("먼저 여행기를 열어주세요.");
+      let entryText = "";
+      const days = {};
+      currentJournalData.entries.forEach((e) => {
+        if (!days[e.day_num]) days[e.day_num] = [];
+        days[e.day_num].push(e);
+      });
+      Object.keys(days).map(Number).sort((a,b) => a-b).forEach((day) => {
+        entryText += `\n== Day ${day} ==\n`;
+        days[day].forEach((e) => {
+          const stars = e.rating ? "★".repeat(e.rating) + "☆".repeat(5 - e.rating) : "(별점 없음)";
+          const cost = e.actual_budget != null ? `실제지출: ${e.actual_budget}${currentJournalData.currency || ""}` : "";
+          const review = e.review ? `\n  후기: ${e.review}` : "";
+          const visited = e.was_visited === false ? " [방문 못 함]" : "";
+          entryText += `- [${e.start_time || ""}] ${e.place_name || ""}${visited} ${stars} ${cost}${review}\n`;
+        });
+      });
+      const prompt = `당신은 감성적인 여행 블로그 작가입니다.
+아래 여행 기록을 바탕으로 개인 여행 블로그에 올릴 수 있는 생생하고 읽기 좋은 여행기를 한국어로 작성해주세요.
+
+[여행 정보]
+- 제목: ${currentJournalData.title || ""}
+- 여행지: ${currentJournalData.city || ""}
+- 기간: ${currentJournalData.travel_start || ""} ~ ${currentJournalData.travel_end || ""}
+
+[작성 규칙]
+- 날짜마다 소제목(예: "DAY 1 - 구마모토 입성")을 붙여주세요
+- 별점 4~5점 장소는 추천 포인트와 함께 생생하게 묘사해주세요
+- 별점 1~2점 장소는 솔직하게 아쉬운 점을 적어주세요
+- [방문 못 함] 표시 장소는 "아쉽게도 이번엔 못 갔지만..." 으로 자연스럽게 언급해주세요
+- 마지막에 "총 소감" 단락을 추가해주세요
+- 딱딱한 일정 나열이 아니라, 읽는 사람이 같이 여행하는 느낌이 들도록 써주세요
+
+[일정별 기록]
+${entryText}`;
+      try {
+        await navigator.clipboard.writeText(prompt);
+        showToast("AI 프롬프트를 클립보드에 복사했습니다.\nClaude.ai나 ChatGPT에 붙여넣어 사용해보세요.");
+      } catch {
+        document.getElementById("promptText").value = prompt;
+        document.getElementById("promptModal").style.display = "flex";
+      }
+    }
+
+    async function copyPromptFromModal() {
+      try {
+        await navigator.clipboard.writeText(document.getElementById("promptText").value);
+        showToast("프롬프트를 복사했습니다.");
+      } catch {
+        alert("복사에 실패했습니다. 직접 선택해서 복사해주세요.");
+      }
+    }
+
+    function showToast(msg) {
+      const t = document.createElement("div");
+      t.style.cssText = "position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#0f172a;color:white;padding:15px 20px;border-radius:14px;z-index:200;white-space:pre-line;text-align:center;box-shadow:0 16px 40px rgba(15,23,42,.28);animation:fadeInUp .3s ease;max-width:420px;";
+      t.innerText = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 4500);
+    }
+
+    function generateJournalHTML(data) {
+      const safe = esc;
+      const url = safeUrl;
+      const entries = sortEntries(data.entries || []);
+      const flightEntries = entries.filter((e) => e.day_num === 0 || e.day_num === 999);
+      const departFlight = flightEntries.find((e) => e.day_num === 0);
+      const returnFlight = flightEntries.find((e) => e.day_num === 999);
+      let flightHtml = "";
+      if (departFlight || returnFlight) {
+        flightHtml = `
+<div class="flight-section">
+  <div class="section-title">✈️ 항공편 정보</div>
+  <div class="flight-grid">
+    ${departFlight ? `<div class="flight-card"><div class="flight-dir">🛫 출국</div><div class="flight-times"><div><div class="time">${safe(departFlight.start_time || "")}</div><div class="sub">${safe(departFlight.place_name || "")}</div></div><div style="flex:1;text-align:center;"><span class="flight-num">항공편</span></div><div><div class="time">${safe(departFlight.end_time || "")}</div></div></div></div>` : ""}
+    ${returnFlight ? `<div class="flight-card"><div class="flight-dir">🛬 귀국</div><div class="flight-times"><div><div class="time">${safe(returnFlight.start_time || "")}</div></div><div style="flex:1;text-align:center;"><span class="flight-num">항공편</span></div><div><div class="time">${safe(returnFlight.end_time || "")}</div><div class="sub">${safe(returnFlight.place_name || "")}</div></div></div></div>` : ""}
+  </div>
+</div>`;
+      }
+      const normal = entries.filter((e) => e.day_num > 0 && e.day_num < 999);
+      const days = {};
+      normal.forEach((e) => {
+        if (!days[e.day_num]) days[e.day_num] = [];
+        days[e.day_num].push(e);
+      });
+      let dayHtml = "";
+      let idx = 0;
+      Object.keys(days).map(Number).sort((a,b) => a-b).forEach((dayNum) => {
+        const timeline = days[dayNum].map((e) => {
+          const stars = e.rating ? `<span style="color:#d69e2e; margin-left:6px;">${"★".repeat(e.rating)}${"☆".repeat(5 - e.rating)}</span>` : "";
+          const mapBtn = url(e.google_map_url) ? `<a href="${url(e.google_map_url)}" target="_blank" class="go-map">📍 지도</a>` : "";
+          const cost = e.actual_budget != null ? `<span style="color:#276749; font-size:0.78rem; margin-left:8px;">💰 ${Number(e.actual_budget).toLocaleString()}${safe(data.currency || "")}</span>` : "";
+          const review = e.review ? `<div class="tl-sub">${safe(e.review).replace(/\n/g, "<br>")}</div>` : "";
+          const notVisited = e.was_visited === false ? `<span style="background:#fed7d7;color:#c53030;padding:2px 6px;border-radius:4px;font-size:0.75rem;margin-left:6px;">방문 못 함</span>` : "";
+          return `<div class="tl-item"><div class="tl-time">${safe(e.start_time || "--:--")}</div><div class="tl-content"><div class="tl-label">${safe(e.place_name || "")}${notVisited}${stars}${cost} ${mapBtn}</div>${review}</div></div>`;
+        }).join("");
+        dayHtml += `<div class="day-block"><div class="day-header" style="background:${dayColors[idx % dayColors.length]}; padding:20px 24px; color:white;"><div><div class="day-date">DAY ${dayNum}</div></div></div><div class="timeline">${timeline}</div></div>`;
+        idx += 1;
+      });
+      const aiStory = data.ai_story ? `<div style="background:white; max-width:900px; margin:20px auto; border-radius:16px; padding:28px 32px; box-shadow:0 4px 20px rgba(0,0,0,0.07); white-space:pre-line; line-height:1.9; font-size:0.95rem;"><div style="font-weight:900; font-size:1.1rem; margin-bottom:16px; color:#1a1a2e;">📝 여행기</div>${safe(data.ai_story).replace(/\n/g, "<br>")}</div>` : "";
+      return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${safe(data.title || "여행기")}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans KR',sans-serif; background:#f0f4f8; color:#2d3748; }
+  .hero { background:linear-gradient(135deg,#1a1a2e 0%,#16213e 40%,#0f3460 70%,#533483 100%); color:white; padding:50px 20px 40px; text-align:center; }
+  .hero-emoji { font-size:52px; margin-bottom:12px; display:block; }
+  .hero h1 { font-size:2.4rem; font-weight:900; letter-spacing:-1px; margin-bottom:8px; }
+  .hero p { font-size:1rem; opacity:0.8; }
+  .hero-badges { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .badge { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:20px; padding:6px 14px; font-size:0.82rem; }
+  .flight-section { background:white; margin:20px auto; max-width:900px; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08); }
+  .section-title { background:linear-gradient(90deg,#2d3748,#4a5568); color:white; padding:14px 24px; font-size:1rem; font-weight:700; }
+  .flight-grid { display:grid; grid-template-columns:1fr 1fr; }
+  .flight-card { padding:20px 24px; border-right:1px solid #e2e8f0; }
+  .flight-card:last-child { border-right:none; }
+  .flight-dir { font-size:0.75rem; font-weight:700; color:#718096; margin-bottom:8px; }
+  .flight-times { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .time { font-size:1.8rem; font-weight:900; color:#2d3748; line-height:1; }
+  .sub { font-size:0.72rem; color:#a0aec0; }
+  .flight-num { background:linear-gradient(90deg,#4299e1,#805ad5); color:white; border-radius:12px; padding:3px 10px; font-size:0.75rem; font-weight:700; }
+  .container { max-width:900px; margin:0 auto; padding:0 20px 40px; }
+  .day-block { background:white; border-radius:20px; overflow:hidden; margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,0.07); }
+  .day-header { padding:20px 24px; color:white; }
+  .day-date { font-size:1.5rem; font-weight:900; }
+  .timeline { padding:20px 24px; }
+  .tl-item { display:flex; gap:16px; margin-bottom:12px; align-items:flex-start; }
+  .tl-time { width:48px; font-size:0.8rem; font-weight:700; color:#a0aec0; text-align:right; flex-shrink:0; }
+  .tl-content { flex:1; padding-bottom:10px; border-bottom:1px solid #f0f4f8; }
+  .tl-label { font-size:0.95rem; font-weight:700; color:#2d3748; }
+  .tl-sub { font-size:0.82rem; color:#718096; margin-top:6px; line-height:1.6; }
+  .go-map { padding:3px 8px; background:#edf2f7; border-radius:6px; text-decoration:none; font-size:0.73rem; font-weight:bold; color:#4a5568; white-space:nowrap; margin-left:6px; }
+  @media(max-width:640px) { .flight-grid { grid-template-columns:1fr; } .flight-card { border-right:none; border-bottom:1px solid #e2e8f0; } }
+</style>
+</head>
+<body>
+<div class="hero">
+  <span class="hero-emoji">${safe(data.cover_emoji || "✈️")}</span>
+  <h1>${safe(data.title || "여행기")}</h1>
+  <p>${safe(data.city || "")} · ${safe(data.travel_start || "")} ~ ${safe(data.travel_end || "")}</p>
+  <div class="hero-badges">${data.author_name ? `<span class="badge">✍️ ${safe(data.author_name)}</span>` : ""}</div>
+</div>
+${flightHtml}
+${aiStory}
+<div class="container">${dayHtml}</div>
+</body>
+</html>`;
+    }
+
+    function downloadJournalHTML() {
+      if (!currentJournalData) return alert("먼저 여행기를 열어주세요.");
+      const html = generateJournalHTML(currentJournalData);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(currentJournalData.title || "여행기").replace(/[\\/:*?"<>|]/g, "_")}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

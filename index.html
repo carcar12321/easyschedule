@@ -171,7 +171,7 @@
     <div class="top-bar-inputs">
         <button class="btn-api" onclick="openApiSettingsModal()">🔑 API 설정</button>
         <button class="btn-create" onclick="openCreateModal()">+ 방 만들기</button>
-        <button style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;" onclick="location.href='/journal'">📖 여행기 작성</button>
+        <button style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;" onclick="openJournalFromRoom()">📖 여행기 작성</button>
         <input type="text" id="loginRoomId" placeholder="방 ID">
         <input type="password" id="loginPw" placeholder="비밀번호">
         <input type="password" id="loginAdminPw" placeholder="관리자 비밀번호(선택)" style="width:170px;">
@@ -195,7 +195,7 @@
             <p>일정 관리, 항공/숙박 정리, AI 일정 자동 생성까지. 함께 여행을 설계하세요.</p>
             <span class="mc-btn mc-btn-blue">계획 시작하기 →</span>
         </div>
-        <div class="mode-card" onclick="location.href='/journal'">
+        <div class="mode-card" onclick="openJournalFromRoom()">
             <span class="mc-emoji">📖</span>
             <h3>여행기 작성</h3>
             <p>다녀온 여행을 기록하세요. 별점, 사진, 예산 비교, AI 초안 생성을 지원합니다.</p>
@@ -674,6 +674,27 @@
         if (googleKey) headers["X-Google-Api-Key"] = googleKey;
         if (llmKey) headers["X-LLM-Api-Key"] = llmKey;
         return headers;
+    }
+
+    async function openJournalFromRoom() {
+        if (!currentRoomId) {
+            window.open('/journal', '_blank');
+            return;
+        }
+        try {
+            const res = await fetch(`${API_BASE}/room/${currentRoomId}/journal_export`, {
+                headers: getAuthHeaders()
+            });
+            if (!res.ok) {
+                window.open('/journal', '_blank');
+                return;
+            }
+            const data = await res.json();
+            sessionStorage.setItem('journal_import_code', data.journal_code);
+            window.open('/journal?from_room=1', '_blank');
+        } catch (e) {
+            window.open('/journal', '_blank');
+        }
     }
 
     function openCreateModal() {
