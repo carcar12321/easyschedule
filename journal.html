@@ -291,7 +291,12 @@
     }
 
     function inspectAutoImport() {
-      pendingImportCode = sessionStorage.getItem("journal_import_code") || "";
+      // sessionStorage는 일부 브라우저에서 새 탭에 공유되지 않을 수 있으므로
+      // localStorage를 폴백으로 함께 확인한다.
+      pendingImportCode =
+        sessionStorage.getItem("journal_import_code") ||
+        localStorage.getItem("journal_import_code") ||
+        "";
       const banner = document.getElementById("autoBanner");
       const decoded = decodeJournalCode(pendingImportCode, false);
       if (!decoded || !decoded.room_info) {
@@ -386,6 +391,7 @@
         });
       }
       sessionStorage.removeItem("journal_import_code");
+      localStorage.removeItem("journal_import_code");
       pendingImportCode = "";
       await loadJournal(created.journal_id);
       showToast("여행 계획을 불러왔습니다.");

@@ -171,7 +171,7 @@
     <div class="top-bar-inputs">
         <button class="btn-api" onclick="openApiSettingsModal()">🔑 API 설정</button>
         <button class="btn-create" onclick="openCreateModal()">+ 방 만들기</button>
-        <button style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;" onclick="openJournalFromRoom()">📖 여행기 작성</button>
+        <button style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;" onclick="openQuickJournalModal()">📖 여행기 작성</button>
         <input type="text" id="loginRoomId" placeholder="방 ID">
         <input type="password" id="loginPw" placeholder="비밀번호">
         <input type="password" id="loginAdminPw" placeholder="관리자 비밀번호(선택)" style="width:170px;">
@@ -195,7 +195,7 @@
             <p>일정 관리, 항공/숙박 정리, AI 일정 자동 생성까지. 함께 여행을 설계하세요.</p>
             <span class="mc-btn mc-btn-blue">계획 시작하기 →</span>
         </div>
-        <div class="mode-card" onclick="openJournalFromRoom()">
+        <div class="mode-card" onclick="openQuickJournalModal()">
             <span class="mc-emoji">📖</span>
             <h3>여행기 작성</h3>
             <p>다녀온 여행을 기록하세요. 별점, 사진, 예산 비교, AI 초안 생성을 지원합니다.</p>
@@ -617,11 +617,62 @@
     </div>
 </div>
 
+<!-- 여행기 빠른 생성 모달 -->
+<div id="quickJournalModal" class="modal-overlay">
+    <div class="modal-content" style="max-width:460px;">
+        <!-- 폼 단계 -->
+        <div id="qjForm">
+            <h3>📖 여행기 만들기</h3>
+            <p style="font-size:0.85rem;color:#64748b;margin:-10px 0 18px;">제목과 비밀번호만 입력하면 식별코드가 발급됩니다.</p>
+            <label>여행기 제목 *</label>
+            <input type="text" id="qjTitle" placeholder="예: 오사카 봄 여행기" maxlength="60">
+            <label>수정 비밀번호 * (4자 이상)</label>
+            <input type="password" id="qjPw" placeholder="나중에 편집할 때 사용합니다">
+            <div style="display:flex;gap:10px;margin-top:4px;">
+                <button class="btn-submit" onclick="submitQuickJournal()">✨ 여행기 만들기</button>
+                <button class="btn-action" style="width:100%;background:#e2e8f0;color:#4a5568;"
+                        onclick="document.getElementById('quickJournalModal').style.display='none'">취소</button>
+            </div>
+        </div>
+        <!-- 결과 단계 -->
+        <div id="qjResult" style="display:none;text-align:center;">
+            <div style="font-size:2.4rem;margin-bottom:8px;">✅</div>
+            <h3 style="color:#166534;margin:0 0 6px;">여행기가 생성되었습니다!</h3>
+            <p style="font-size:0.85rem;color:#4a5568;margin:0 0 22px;">아래 식별코드로 언제든 다시 열 수 있습니다.</p>
+            <!-- 식별코드 박스 -->
+            <div onclick="copyJournalId()"
+                 style="background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:18px 20px;
+                        margin-bottom:20px;cursor:pointer;user-select:none;transition:background .15s;"
+                 onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+                <div style="font-size:0.78rem;color:#4b5563;margin-bottom:8px;">식별코드 (클릭하면 복사됩니다)</div>
+                <div id="qjResultId"
+                     style="font-size:2.2rem;font-weight:900;color:#15803d;letter-spacing:6px;font-family:monospace;"></div>
+                <div style="font-size:0.75rem;color:#86efac;margin-top:6px;">📋 클릭하여 복사</div>
+            </div>
+            <div id="qjCopyMsg" style="display:none;color:#16a34a;font-size:0.82rem;margin-bottom:12px;">
+                ✅ 복사되었습니다!
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn-submit" style="background:#0d9488;" onclick="openJournalEditor()">
+                    여행기 편집하러 가기 →
+                </button>
+                <button class="btn-action" style="width:100%;background:#e2e8f0;color:#4a5568;"
+                        onclick="document.getElementById('quickJournalModal').style.display='none'">
+                    닫기
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     const API_BASE = "";
     let currentRoomId = "";
     let currentRole = "guest";
+    let currentCity = "";
+    let currentRoomCurrency = "JPY";
     let generatedRoomUrl = "";
+    let lastCreatedJournalId = "";
 
     window.onload = () => {
         const urlSegments = window.location.pathname.split('/');
@@ -676,25 +727,88 @@
         return headers;
     }
 
-    async function openJournalFromRoom() {
-        if (!currentRoomId) {
-            window.open('/journal', '_blank');
-            return;
+    // ─── 여행기 빠른 생성 모달 ────────────────────────────────────────
+    function openQuickJournalModal() {
+        // 폼 초기화 (결과 화면이 남아있을 수 있으므로)
+        document.getElementById('qjForm').style.display = 'block';
+        document.getElementById('qjResult').style.display = 'none';
+        document.getElementById('qjCopyMsg').style.display = 'none';
+        document.getElementById('qjPw').value = '';
+
+        // 방에 접속 중이면 방 제목을 기본값으로 채워 편의 제공
+        const heroTitle = document.getElementById('heroTitle');
+        if (currentRoomId && heroTitle && heroTitle.innerText && heroTitle.innerText !== '여행 제목') {
+            document.getElementById('qjTitle').value = heroTitle.innerText + ' 여행기';
+        } else {
+            document.getElementById('qjTitle').value = '';
         }
+
+        // 모달 열기 (새 탭·페이지 이동 없이 메인 페이지 상태 완전 유지)
+        document.getElementById('quickJournalModal').style.display = 'flex';
+    }
+
+    async function submitQuickJournal() {
+        const title = document.getElementById('qjTitle').value.trim();
+        const pw    = document.getElementById('qjPw').value.trim();
+        if (!title)            { alert('제목을 입력해주세요.'); return; }
+        if (!pw || pw.length < 4) { alert('비밀번호를 4자 이상 입력해주세요.'); return; }
+
+        const payload = {
+            title,
+            edit_pw:        pw,
+            city:           currentCity || '',
+            source_room_id: currentRoomId || null,
+            author_name:    '여행자',
+            currency:       currentRoomCurrency || 'JPY',
+            cover_emoji:    '✈️'
+        };
+
         try {
-            const res = await fetch(`${API_BASE}/room/${currentRoomId}/journal_export`, {
-                headers: getAuthHeaders()
+            const res = await fetch(`${API_BASE}/journal`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(payload)
             });
             if (!res.ok) {
-                window.open('/journal', '_blank');
+                const err = await res.json().catch(() => ({}));
+                alert('여행기 생성 실패: ' + (err.detail || '알 수 없는 오류'));
                 return;
             }
             const data = await res.json();
-            sessionStorage.setItem('journal_import_code', data.journal_code);
-            window.open('/journal?from_room=1', '_blank');
-        } catch (e) {
-            window.open('/journal', '_blank');
+            lastCreatedJournalId = data.journal_id;
+            // 토큰 저장 (journal.html에서 편집 모드로 바로 진입)
+            localStorage.setItem(`journal_token_${data.journal_id}`, data.token);
+
+            document.getElementById('qjResultId').textContent = data.journal_id;
+            document.getElementById('qjForm').style.display   = 'none';
+            document.getElementById('qjResult').style.display = 'block';
+        } catch(e) {
+            alert('네트워크 오류가 발생했습니다.');
         }
+    }
+
+    async function copyJournalId() {
+        if (!lastCreatedJournalId) return;
+        try {
+            await navigator.clipboard.writeText(lastCreatedJournalId);
+        } catch(e) {
+            // 클립보드 API 미지원 환경 대응
+            const tmp = document.createElement('input');
+            tmp.value = lastCreatedJournalId;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+        }
+        const msg = document.getElementById('qjCopyMsg');
+        msg.style.display = 'block';
+        setTimeout(() => { msg.style.display = 'none'; }, 2000);
+    }
+
+    function openJournalEditor() {
+        if (!lastCreatedJournalId) return;
+        // 메인 페이지 상태(currentRoomId, 토큰 등)에 전혀 영향 없이 새 탭만 오픈
+        window.open(`/journal/${lastCreatedJournalId}`, '_blank');
     }
 
     function openCreateModal() {
@@ -799,6 +913,8 @@
         }
         const data = await res.json();
         currentRole = data.role;
+        currentCity = data.city || "";
+        currentRoomCurrency = data.currency || "JPY";
 
         document.getElementById('landingSection').style.display = 'none';
         document.getElementById('mainContainer').style.display = 'block';
