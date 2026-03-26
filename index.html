@@ -138,6 +138,30 @@
             .tl-time { width: auto; }
             .transit-box { margin-left: 20px; }
         }
+
+        /* ── 홈 랜딩 ── */
+        #landingSection { max-width: 760px; margin: 48px auto 0; padding: 0 20px; }
+        .landing-hero { text-align: center; margin-bottom: 36px; }
+        .landing-hero h2 { font-size: 2rem; font-weight: 900; margin: 0 0 8px; }
+        .landing-hero p  { color: #718096; font-size: 1rem; margin: 0; }
+        .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 560px) { .mode-cards { grid-template-columns: 1fr; } }
+        .mode-card {
+            background: white; border-radius: 20px; padding: 36px 24px;
+            box-shadow: 0 4px 24px rgba(0,0,0,.07);
+            cursor: pointer; transition: transform .15s, box-shadow .15s;
+            text-align: center; border: 2px solid transparent;
+        }
+        .mode-card:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(0,0,0,.12); border-color: #2b6cb0; }
+        .mode-card .mc-emoji { font-size: 3.2rem; margin-bottom: 14px; display: block; }
+        .mode-card h3 { font-size: 1.25rem; font-weight: 900; margin: 0 0 8px; color: #1a1a2e; }
+        .mode-card p  { font-size: .88rem; color: #718096; margin: 0 0 20px; line-height: 1.6; }
+        .mode-card .mc-btn {
+            display: inline-block; padding: 10px 24px; border-radius: 10px;
+            font-weight: bold; font-size: .9rem; border: none; cursor: pointer;
+        }
+        .mc-btn-blue  { background: #2b6cb0; color: white; }
+        .mc-btn-teal  { background: #0d9488; color: white; }
     </style>
 </head>
 <body>
@@ -147,12 +171,36 @@
     <div class="top-bar-inputs">
         <button class="btn-api" onclick="openApiSettingsModal()">🔑 API 설정</button>
         <button class="btn-create" onclick="openCreateModal()">+ 방 만들기</button>
+        <button style="background:#0d9488;color:white;padding:8px 16px;border:none;border-radius:6px;font-weight:bold;cursor:pointer;" onclick="location.href='/journal'">📖 여행기 작성</button>
         <input type="text" id="loginRoomId" placeholder="방 ID">
         <input type="password" id="loginPw" placeholder="비밀번호">
         <input type="password" id="loginAdminPw" placeholder="관리자 비밀번호(선택)" style="width:170px;">
         <input type="text" id="loginNickname" placeholder="닉네임(동행자 8자)" maxlength="8" style="width:150px;">
         <button class="btn-login" id="btnLogin" onclick="login()">입장</button>
         <button class="btn-logout" id="btnLogout" onclick="logout()">로그아웃</button>
+    </div>
+</div>
+
+<!-- 홈 랜딩 -->
+<div id="landingSection" style="display:none;">
+    <div class="landing-hero">
+        <span style="font-size:3rem;">🎒</span>
+        <h2>Easy Schedule Pro</h2>
+        <p>여행 계획부터 여행기 작성까지, 한 곳에서.</p>
+    </div>
+    <div class="mode-cards">
+        <div class="mode-card" onclick="selectPlanMode()">
+            <span class="mc-emoji">🗺️</span>
+            <h3>여행 계획 짜기</h3>
+            <p>일정 관리, 항공/숙박 정리, AI 일정 자동 생성까지. 함께 여행을 설계하세요.</p>
+            <span class="mc-btn mc-btn-blue">계획 시작하기 →</span>
+        </div>
+        <div class="mode-card" onclick="location.href='/journal'">
+            <span class="mc-emoji">📖</span>
+            <h3>여행기 작성</h3>
+            <p>다녀온 여행을 기록하세요. 별점, 사진, 예산 비교, AI 초안 생성을 지원합니다.</p>
+            <span class="mc-btn mc-btn-teal">여행기 쓰러 가기 →</span>
+        </div>
     </div>
 </div>
 
@@ -582,8 +630,14 @@
             document.getElementById('loginRoomId').value = rid;
             currentRoomId = rid;
             loadRoomData();
+        } else {
+            document.getElementById('landingSection').style.display = 'block';
         }
     };
+
+    function selectPlanMode() {
+        document.getElementById('landingSection').style.display = 'none';
+    }
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -725,6 +779,7 @@
         const data = await res.json();
         currentRole = data.role;
 
+        document.getElementById('landingSection').style.display = 'none';
         document.getElementById('mainContainer').style.display = 'block';
         document.getElementById('quickSearchMenu').style.display = 'flex';
 
@@ -1016,14 +1071,33 @@
     }
 
     async function addComment(schId) {
+        const content = document.getElementById(`cb-${schId}`).value.trim();
+        if (!content) { alert("댓글 내용을 입력해주세요."); return; }
+
         let name = "";
         if (currentRole === 'guest') {
-            name = document.getElementById(`cn-${schId}`).value || "익명";
+            name = document.getElementById(`cn-${schId}`).value.trim() || "익명";
         }
-        await postReq(`schedule/${schId}/comment`, {
-            writer_name: name,
-            content: document.getElementById(`cb-${schId}`).value
+
+        const res = await fetch(`${API_BASE}/room/${currentRoomId}/schedule/${schId}/comment`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ writer_name: name, content })
         });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`댓글 저장 실패: ${err.detail || '알 수 없는 오류'}`);
+            return;
+        }
+
+        document.getElementById(`cb-${schId}`).value = "";
+        if (currentRole === 'guest') {
+            const nameEl = document.getElementById(`cn-${schId}`);
+            if (nameEl) nameEl.value = "";
+        }
+
+        await loadRoomData();
     }
 
     async function addSuggestion() {
