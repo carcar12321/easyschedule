@@ -69,7 +69,37 @@
     .modal-box { width: min(680px,100%); background: white; border-radius: 22px; padding: 24px; box-shadow: 0 18px 50px rgba(15,23,42,.28); }
     .modal-box textarea { min-height: 240px; }
     @keyframes fadeInUp { from { opacity: 0; transform: translate(-50%,18px); } to { opacity: 1; transform: translate(-50%,0); } }
-    @media (max-width: 860px) { .grid3, .fields2, .fields3, .flight-grid { grid-template-columns: 1fr; } .flight-card { border-right: none; border-bottom: 1px solid #e2e8f0; } .flight-card:last-child { border-bottom: none; } .entry-top { flex-direction: column; } }
+    /* ── 모바일 UX ── */
+    button, .btn, .pill { min-height: 44px; }
+    input, textarea, select { min-height: 44px; font-size: 16px; }
+    .modal-box { padding: 16px; }
+    /* FAB */
+    .fab { position: fixed; bottom: 24px; right: 20px; z-index: 50; width: 56px; height: 56px; border-radius: 50%; background: #0f766e; color: white; font-size: 1.6rem; border: none; cursor: pointer; box-shadow: 0 6px 20px rgba(15,118,110,.4); display: none; align-items: center; justify-content: center; transition: transform .15s; }
+    .fab:hover { transform: scale(1.08); }
+    /* Day 섹션 접기/펼치기 */
+    .day-head { cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .day-head .toggle-icon { font-size: 1rem; transition: transform .2s; }
+    .day-collapsed .day-head .toggle-icon { transform: rotate(-90deg); }
+    .day-timeline-wrap { overflow: hidden; }
+    /* Day 내 항목 추가 버튼 */
+    .day-add-btn { display: block; width: calc(100% - 36px); margin: 0 18px 14px; padding: 10px; background: #f0fdf4; color: #0f766e; border: 1px dashed #6ee7b7; border-radius: 12px; font-weight: 800; font-size: .88rem; cursor: pointer; text-align: center; min-height: 44px; }
+    .day-add-btn:hover { background: #dcfce7; }
+    /* 항목 카드 하단 액션 버튼 줄 */
+    .entry-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .entry-actions button { flex: 1; min-width: 80px; }
+    @media (max-width: 860px) { .grid3, .fields2, .fields3, .flight-grid { grid-template-columns: 1fr; } .flight-card { border-right: none; border-bottom: 1px solid #e2e8f0; } .flight-card:last-child { border-bottom: none; } .entry-top { flex-direction: column; } .toolbar { flex-direction: column; align-items: stretch; } .toolbar .row { justify-content: stretch; } .toolbar .row button, .toolbar .row .chip { flex: 1; text-align: center; font-size: .82rem; } }
+    /* ── 댓글 섹션 ── */
+    .comments-section { border-top: 1px solid #f1f5f9; margin-top: 10px; padding-top: 10px; }
+    .comment-list { display: grid; gap: 8px; margin-bottom: 10px; }
+    .comment-item { background: #f8fafc; border-radius: 10px; padding: 10px 12px; font-size: .85rem; line-height: 1.5; }
+    .comment-item .c-nick { font-weight: 900; color: #1e3a8a; margin-right: 6px; }
+    .comment-item .c-author { background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 5px; font-size: .72rem; font-weight: 800; margin-right: 6px; }
+    .comment-item .c-time { color: #94a3b8; font-size: .75rem; }
+    .comment-item .c-del { float: right; background: none; border: none; color: #f87171; cursor: pointer; font-size: .8rem; min-height: 24px; padding: 2px 6px; }
+    .comment-form { display: none; margin-top: 8px; }
+    .comment-form.open { display: block; }
+    .comment-form input { margin-bottom: 8px; }
+    .btn-toggle-comment { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; border-radius: 10px; font-size: .82rem; padding: 6px 12px; cursor: pointer; }
     /* ── 식별코드 빠른 로그인 ── */
     .quick-open { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; }
     .quick-open input { margin: 0; flex: 1; min-width: 120px; padding: 10px 12px; }
@@ -224,6 +254,9 @@
       <div id="days" class="days"></div>
     </section>
   </div>
+
+  <!-- FAB: 일정 추가 버튼 (편집 모드에서 표시) -->
+  <button class="fab" id="fabBtn" onclick="toggleComposer()" title="일정 추가">＋</button>
 
   <div id="promptModal" class="modal">
     <div class="modal-box">
@@ -476,6 +509,9 @@
       chip.style.color = editable ? "#166534" : "#075985";
       document.getElementById("readonlyNote").style.display = editable ? "none" : "block";
       document.getElementById("composer").style.display = "none";
+      // FAB: 편집 가능 상태에서만 표시
+      const fab = document.getElementById("fabBtn");
+      if (fab) fab.style.display = editable ? "flex" : "none";
       renderFlights();
       renderDays();
       history.replaceState({}, "", `/journal/${journalId}`);
@@ -510,14 +546,43 @@
         if (!map[e.day_num]) map[e.day_num] = [];
         map[e.day_num].push(e);
       });
-      daysEl.innerHTML = Object.keys(map).map(Number).sort((a,b) => a-b).map((day, idx) => `<div class="day"><div class="day-head" style="background:${dayColors[idx % dayColors.length]}">DAY ${day}</div><div class="timeline">${map[day].map(renderEntry).join("")}</div></div>`).join("");
+      daysEl.innerHTML = Object.keys(map).map(Number).sort((a,b) => a-b).map((day, idx) => [
+        `<div class="day" id="day_block_${day}">`,
+        `<div class="day-head" style="background:${dayColors[idx % dayColors.length]};" onclick="toggleDay(${day})">`,
+        `<span>DAY ${day}</span><span class="toggle-icon">▾</span></div>`,
+        `<div class="day-timeline-wrap" id="day_wrap_${day}">`,
+        `<div class="timeline">${map[day].map(renderEntry).join("")}</div>`,
+        isEditor() ? `<button class="day-add-btn" onclick="openComposerForDay(${day})">＋ DAY ${day} 항목 추가</button>` : "",
+        `</div></div>`
+      ].join("")).join("");
+    }
+
+    function toggleDay(dayNum) {
+      const block = document.getElementById(`day_block_${dayNum}`);
+      const wrap  = document.getElementById(`day_wrap_${dayNum}`);
+      if (!block || !wrap) return;
+      const collapsed = block.classList.toggle("day-collapsed");
+      wrap.style.display = collapsed ? "none" : "";
+    }
+
+    function openComposerForDay(dayNum) {
+      const composer = document.getElementById("composer");
+      const dayInput  = document.getElementById("entryDay");
+      if (!isEditor()) return alert("편집 권한이 필요합니다.");
+      if (dayInput) dayInput.value = dayNum;
+      composer.style.display = "block";
+      composer.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
     function renderEntry(e) {
       const editable = isEditor();
       const mapLink = safeUrl(e.google_map_url);
       const planned = e.planned_budget != null ? `${Number(e.planned_budget).toLocaleString()} ${esc(currentJournalData.currency || "")}` : "미정";
-      const stars = e.rating ? `${"★".repeat(e.rating)}${"☆".repeat(5 - e.rating)}` : "미평가";
+      // 별점 표시: ⭐ X / 10 형태
+      const ratingVal = Number(e.rating || 0);
+      const ratingBadge = ratingVal > 0 ? `⭐ ${ratingVal} / 10` : "미평가";
+      // was_visited=false일 때 별점 비활성화
+      const ratingDisabled = (!editable || e.was_visited === false) ? "disabled" : "";
 
       // 사진 영역
       const photos = e.photos || [];
@@ -540,7 +605,7 @@
           <div class="tag-row">
             <span class="badge">예정 ${planned}</span>
             <span class="badge">${e.was_visited === false ? "방문 못 함" : "방문함"}</span>
-            <span class="badge">${stars}</span>
+            <span class="badge">${ratingBadge}</span>
             ${mapLink ? `<a class="map" href="${mapLink}" target="_blank" rel="noopener">📍 지도</a>` : ""}
           </div>
         </div>
@@ -552,11 +617,16 @@
           </div>
           <div class="fields3">
             <div><label for="actual_${e.id}">실제 지출</label><input id="actual_${e.id}" type="number" value="${esc(e.actual_budget != null ? e.actual_budget : "")}" ${editable ? "" : "disabled"}></div>
-            <div><label for="rating_${e.id}">별점</label><select id="rating_${e.id}" ${editable ? "" : "disabled"}>${[0,1,2,3,4,5].map((n) => `<option value="${n}" ${Number(e.rating || 0) === n ? "selected" : ""}>${n === 0 ? "미평가" : `${n}점`}</option>`).join("")}</select></div>
-            <div><label for="visited_${e.id}">방문 여부</label><select id="visited_${e.id}" ${editable ? "" : "disabled"}><option value="true" ${e.was_visited !== false ? "selected" : ""}>방문함</option><option value="false" ${e.was_visited === false ? "selected" : ""}>방문 못 함</option></select></div>
+            <div>
+              <label for="rating_${e.id}">별점 (0~10)</label>
+              <select id="rating_${e.id}" ${ratingDisabled}>
+                ${[0,1,2,3,4,5,6,7,8,9,10].map((n) => `<option value="${n}" ${ratingVal === n ? "selected" : ""}>${n === 0 ? "미평가" : `${n}점`}</option>`).join("")}
+              </select>
+              ${e.was_visited === false ? `<div style="font-size:.75rem;color:#94a3b8;margin-top:4px;">방문 못 함 — 별점 비활성화</div>` : ""}
+            </div>
+            <div><label for="visited_${e.id}">방문 여부</label><select id="visited_${e.id}" ${editable ? "" : "disabled"} onchange="onVisitedChange(${e.id})"><option value="true" ${e.was_visited !== false ? "selected" : ""}>방문함</option><option value="false" ${e.was_visited === false ? "selected" : ""}>방문 못 함</option></select></div>
           </div>
           <div><label for="review_${e.id}">후기</label><textarea id="review_${e.id}" ${editable ? "" : "disabled"}>${esc(e.review || "")}</textarea></div>
-          <div><label for="memo_${e.id}">메모</label><textarea id="memo_${e.id}" ${editable ? "" : "disabled"}>${esc(e.memo || "")}</textarea></div>
           <!-- 사진 -->
           <div>
             <label>사진</label>
@@ -564,10 +634,20 @@
             ${uploadBtn}
           </div>
         </div>
-        ${editable
-          ? `<div class="actions"><button class="btn btn-primary" onclick="saveEntry(${e.id})">저장</button><button class="btn btn-rose" onclick="deleteEntry(${e.id})">삭제</button></div>`
-          : `<div style="margin-top:10px;color:#64748b;font-size:.84rem;">읽기 전용 상태입니다.</div>`}
+        <div class="entry-actions">
+          ${editable ? `<button class="btn btn-primary" onclick="saveEntry(${e.id})">💾 저장</button>
+          <button class="btn btn-rose" onclick="deleteEntry(${e.id})">🗑 삭제</button>` : ""}
+          <button class="btn btn-slate" onclick="toggleComments(${e.id})">💬 댓글</button>
+        </div>
+        <div id="comments_${e.id}" class="comments-section" style="display:none;"></div>
       </div>`;
+    }
+
+    // 방문 여부 변경 시 별점 비활성화 토글
+    function onVisitedChange(entryId) {
+      const visited = document.getElementById(`visited_${entryId}`).value;
+      const ratingEl = document.getElementById(`rating_${entryId}`);
+      if (ratingEl) ratingEl.disabled = (visited === "false");
     }
 
     function toggleComposer(forceValue) {
@@ -598,6 +678,117 @@
       ["entryPlace", "entryMap", "entryPlanned", "entryStart", "entryEnd"].forEach((id) => { document.getElementById(id).value = ""; });
       await loadJournal(currentJournalId);
       showToast("일정이 추가되었습니다.");
+    }
+
+    // ─── 댓글 ────────────────────────────────────────────────────────
+    function toggleComments(entryId) {
+      const section = document.getElementById(`comments_${entryId}`);
+      if (!section) return;
+      const isOpen = section.style.display !== "none";
+      if (isOpen) {
+        section.style.display = "none";
+      } else {
+        section.style.display = "block";
+        if (!section.dataset.loaded) renderCommentSection(entryId);
+      }
+    }
+
+    function renderCommentSection(entryId) {
+      const entry = currentJournalData.entries.find(e => e.id === entryId);
+      const comments = (entry && entry.comments) || [];
+      const section = document.getElementById(`comments_${entryId}`);
+      if (!section) return;
+      section.dataset.loaded = "1";
+
+      const commentListHtml = comments.length > 0
+        ? `<div class="comment-list">${comments.map(c => `
+            <div class="comment-item" id="comment_item_${c.id}">
+              ${c.is_author ? `<span class="c-author">작성자</span>` : ""}
+              <span class="c-nick">${esc(c.nickname)}</span>
+              <span>${esc(c.content)}</span>
+              <span class="c-time"> · ${esc(c.created_at)}</span>
+              ${isEditor() ? `<button class="c-del" onclick="deleteComment(${entryId}, ${c.id})">🗑</button>` : ""}
+            </div>`).join("")}
+          </div>`
+        : `<div style="color:#94a3b8;font-size:.83rem;margin-bottom:8px;">아직 댓글이 없습니다.</div>`;
+
+      const savedNick = localStorage.getItem("journal_comment_nick") || "";
+      section.innerHTML = `
+        <div class="comments-section">
+          <div id="clist_${entryId}">${commentListHtml}</div>
+          <button class="btn-toggle-comment" onclick="openCommentForm(${entryId})">💬 댓글 달기</button>
+          <div class="comment-form" id="cform_${entryId}">
+            <input id="cnick_${entryId}" placeholder="닉네임" maxlength="20" value="${esc(savedNick)}" style="margin-top:8px;">
+            <textarea id="ccontent_${entryId}" placeholder="댓글을 입력하세요..." style="min-height:70px;margin-bottom:0;"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button class="btn btn-primary" style="flex:1;" onclick="submitComment(${entryId})">등록</button>
+              <button class="btn btn-slate" onclick="document.getElementById('cform_${entryId}').classList.remove('open')">취소</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function openCommentForm(entryId) {
+      const form = document.getElementById(`cform_${entryId}`);
+      if (form) {
+        form.classList.toggle("open");
+        if (form.classList.contains("open")) {
+          const nickEl = document.getElementById(`cnick_${entryId}`);
+          if (nickEl && !nickEl.value) nickEl.focus();
+        }
+      }
+    }
+
+    async function submitComment(entryId) {
+      const nick = (document.getElementById(`cnick_${entryId}`).value || "").trim();
+      const content = (document.getElementById(`ccontent_${entryId}`).value || "").trim();
+      if (!nick) return alert("닉네임을 입력해주세요.");
+      if (!content) return alert("댓글 내용을 입력해주세요.");
+      localStorage.setItem("journal_comment_nick", nick);
+
+      const token = getJournalToken(currentJournalId);
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/journal/${currentJournalId}/entry/${entryId}/comment`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ nickname: nick, content })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return alert("댓글 등록 실패: " + (err.detail || "오류"));
+      }
+      // 새 댓글을 로컬 데이터에도 추가 후 재렌더
+      const newComment = await res.json();
+      const entry = currentJournalData.entries.find(e => e.id === entryId);
+      if (entry) {
+        if (!entry.comments) entry.comments = [];
+        entry.comments.push({
+          id: newComment.id, nickname: nick, content,
+          is_author: Boolean(token), created_at: newComment.created_at
+        });
+      }
+      const section = document.getElementById(`comments_${entryId}`);
+      if (section) { section.dataset.loaded = ""; renderCommentSection(entryId); }
+      showToast("💬 댓글이 등록되었습니다.");
+    }
+
+    async function deleteComment(entryId, commentId) {
+      if (!isEditor()) return;
+      if (!confirm("이 댓글을 삭제할까요?")) return;
+      const token = getJournalToken(currentJournalId);
+      const res = await fetch(`/api/journal/${currentJournalId}/entry/${entryId}/comment/${commentId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) return alert("삭제에 실패했습니다.");
+      // 로컬 데이터에서도 제거 후 재렌더
+      const entry = currentJournalData.entries.find(e => e.id === entryId);
+      if (entry && entry.comments) entry.comments = entry.comments.filter(c => c.id !== commentId);
+      const section = document.getElementById(`comments_${entryId}`);
+      if (section) { section.dataset.loaded = ""; renderCommentSection(entryId); }
+      showToast("댓글이 삭제되었습니다.");
     }
 
     // ─── 사진 업로드 ────────────────────────────────────────────────
@@ -667,7 +858,7 @@
         actual_budget: toNum(document.getElementById(`actual_${id}`).value),
         rating: Number(document.getElementById(`rating_${id}`).value || 0),
         review: document.getElementById(`review_${id}`).value.trim(),
-        memo: document.getElementById(`memo_${id}`).value.trim(),
+        memo: "",
         was_visited: document.getElementById(`visited_${id}`).value === "true"
       };
       const res = await fetch(`/api/journal/${currentJournalId}/entry/${id}`, {
@@ -718,7 +909,7 @@
       Object.keys(days).map(Number).sort((a,b) => a-b).forEach((day) => {
         entryText += `\n== Day ${day} ==\n`;
         days[day].forEach((e) => {
-          const stars = e.rating ? "★".repeat(e.rating) + "☆".repeat(5 - e.rating) : "(별점 없음)";
+          const stars = e.rating ? `⭐ ${e.rating} / 10` : "(별점 없음)";
           const cost = e.actual_budget != null ? `실제지출: ${e.actual_budget}${currentJournalData.currency || ""}` : "";
           const review = e.review ? `\n  후기: ${e.review}` : "";
           const visited = e.was_visited === false ? " [방문 못 함]" : "";
@@ -797,7 +988,7 @@ ${entryText}`;
       let idx = 0;
       Object.keys(days).map(Number).sort((a,b) => a-b).forEach((dayNum) => {
         const timeline = days[dayNum].map((e) => {
-          const stars = e.rating ? `<span style="color:#d69e2e; margin-left:6px;">${"★".repeat(e.rating)}${"☆".repeat(5 - e.rating)}</span>` : "";
+          const stars = e.rating ? `<span style="color:#d69e2e; font-weight:700; margin-left:6px;">⭐ ${e.rating} / 10</span>` : "";
           const mapBtn = url(e.google_map_url) ? `<a href="${url(e.google_map_url)}" target="_blank" class="go-map">📍 지도</a>` : "";
           const cost = e.actual_budget != null ? `<span style="color:#276749; font-size:0.78rem; margin-left:8px;">💰 ${Number(e.actual_budget).toLocaleString()}${safe(data.currency || "")}</span>` : "";
           const review = e.review ? `<div class="tl-sub">${safe(e.review).replace(/\n/g, "<br>")}</div>` : "";

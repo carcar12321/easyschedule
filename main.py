@@ -438,6 +438,18 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS journal_comment (
+            id          SERIAL PRIMARY KEY,
+            entry_id    INTEGER NOT NULL,
+            journal_id  TEXT NOT NULL,
+            nickname    TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            is_author   BOOLEAN DEFAULT FALSE,
+            created_at  TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
     migrations = [
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''",
         "ALTER TABLE room ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'JPY'",
@@ -463,6 +475,7 @@ def init_db():
         "ALTER TABLE journal ADD COLUMN IF NOT EXISTS cover_emoji TEXT DEFAULT '✈️'",
         "ALTER TABLE journal ADD COLUMN IF NOT EXISTS ai_story TEXT DEFAULT ''",
         "ALTER TABLE journal_entry ADD COLUMN IF NOT EXISTS was_visited BOOLEAN DEFAULT TRUE",
+        "CREATE TABLE IF NOT EXISTS journal_comment (id SERIAL PRIMARY KEY, entry_id INTEGER NOT NULL, journal_id TEXT NOT NULL, nickname TEXT NOT NULL, content TEXT NOT NULL, is_author BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW())",
     ]
     for sql in migrations:
         try:
@@ -1865,6 +1878,10 @@ class ImportRoomRequest(BaseModel):
 class AIStoryUpdate(BaseModel):
     ai_story: str
 
+class JournalCommentCreate(BaseModel):
+    nickname: str
+    content: str
+
 
 # ─────────────────────────────────────────────
 # 여행기(Travel Journal) — 헬퍼
@@ -1906,12 +1923,22 @@ def fetch_journal_full(c, journal_id: str) -> dict:
         eid, day_num = e[0], e[1]
         c.execute("SELECT id, photo_data, caption FROM journal_photo WHERE entry_id=%s ORDER BY id", (eid,))
         photos = [{"id": p[0], "photo_data": p[1], "caption": p[2]} for p in c.fetchall()]
+        c.execute(
+            "SELECT id, nickname, content, is_author, created_at FROM journal_comment WHERE entry_id=%s ORDER BY created_at ASC",
+            (eid,)
+        )
+        comments = [
+            {"id": r[0], "nickname": r[1], "content": r[2], "is_author": r[3],
+             "created_at": str(r[4])[:16] if r[4] else ""}
+            for r in c.fetchall()
+        ]
         entry_obj = {
             "id": eid, "start_time": e[2], "end_time": e[3], "place_name": e[4],
             "google_map_url": e[5], "planned_budget": e[6], "actual_budget": e[7],
             "rating": e[8], "review": e[9], "memo": e[10], "was_visited": e[11],
             "day_num": day_num, "sort_order": e[12],
-            "photos": photos
+            "photos": photos,
+            "comments": comments
         }
         flat_entries.append(entry_obj)
         days_map.setdefault(day_num, []).append(entry_obj)
@@ -2068,6 +2095,7 @@ def delete_entry(journal_id: str, entry_id: int, credentials: Optional[HTTPAutho
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM journal_photo WHERE entry_id=%s", (entry_id,))
+    c.execute("DELETE FROM journal_comment WHERE entry_id=%s", (entry_id,))
     c.execute("DELETE FROM journal_entry WHERE id=%s AND journal_id=%s", (entry_id, journal_id))
     conn.commit()
     c.close()
@@ -2104,6 +2132,74 @@ def delete_photo(journal_id: str, photo_id: int, credentials: Optional[HTTPAutho
     c.close()
     conn.close()
     return {"ok": True}
+
+# ─────────────────────────────────────────────
+# 댓글 API
+# ─────────────────────────────────────────────
+@app.post("/api/journal/{journal_id}/entry/{entry_id}/comment")
+def add_comment(journal_id: str, entry_id: int, req: JournalCommentCreate,
+                credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    """닉네임+내용 받아 댓글 저장. 편집자 토큰 보유 시 is_author=True."""
+    payload = decode_token(credentials.credentials) if credentials else None
+    is_author = bool(payload and payload.get("journal_id") == journal_id and payload.get("role") == "editor")
+    if not req.nickname.strip():
+        raise HTTPException(status_code=400, detail="닉네임을 입력해주세요.")
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="댓글 내용을 입력해주세요.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    # entry가 해당 journal에 속하는지 확인
+    c.execute("SELECT id FROM journal_entry WHERE id=%s AND journal_id=%s", (entry_id, journal_id))
+    if not c.fetchone():
+        c.close(); conn.close()
+        raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다.")
+    c.execute(
+        "INSERT INTO journal_comment (entry_id, journal_id, nickname, content, is_author) VALUES (%s,%s,%s,%s,%s) RETURNING id, created_at",
+        (entry_id, journal_id, req.nickname.strip(), req.content.strip(), is_author)
+    )
+    row = c.fetchone()
+    conn.commit()
+    c.close(); conn.close()
+    return {"id": row[0], "created_at": str(row[1])[:16]}
+
+@app.delete("/api/journal/{journal_id}/entry/{entry_id}/comment/{comment_id}")
+def delete_comment(journal_id: str, entry_id: int, comment_id: int,
+                   credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    """is_author=True인 댓글만 삭제 가능 (편집자 토큰 필수)."""
+    payload = decode_token(credentials.credentials) if credentials else None
+    if not payload or payload.get("journal_id") != journal_id or payload.get("role") != "editor":
+        raise HTTPException(status_code=403, detail="편집 권한이 없습니다.")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT is_author FROM journal_comment WHERE id=%s AND entry_id=%s AND journal_id=%s",
+              (comment_id, entry_id, journal_id))
+    row = c.fetchone()
+    if not row:
+        c.close(); conn.close()
+        raise HTTPException(status_code=404, detail="댓글을 찾을 수 없습니다.")
+    # is_author 여부와 관계없이 여행기 작성자(편집자)는 모두 삭제 가능
+    c.execute("DELETE FROM journal_comment WHERE id=%s", (comment_id,))
+    conn.commit()
+    c.close(); conn.close()
+    return {"ok": True}
+
+@app.get("/api/journal/{journal_id}/entry/{entry_id}/comments")
+def get_comments(journal_id: str, entry_id: int):
+    """특정 항목의 댓글 목록 조회."""
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, nickname, content, is_author, created_at FROM journal_comment "
+        "WHERE entry_id=%s AND journal_id=%s ORDER BY created_at ASC",
+        (entry_id, journal_id)
+    )
+    comments = [
+        {"id": r[0], "nickname": r[1], "content": r[2], "is_author": r[3],
+         "created_at": str(r[4])[:16] if r[4] else ""}
+        for r in c.fetchall()
+    ]
+    c.close(); conn.close()
+    return {"comments": comments}
 
 @app.post("/api/journal/{journal_id}/ai_draft")
 def ai_draft(journal_id: str, req: JournalAIRequest, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
