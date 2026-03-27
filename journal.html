@@ -70,6 +70,18 @@
     .modal-box textarea { min-height: 240px; }
     @keyframes fadeInUp { from { opacity: 0; transform: translate(-50%,18px); } to { opacity: 1; transform: translate(-50%,0); } }
     @media (max-width: 860px) { .grid3, .fields2, .fields3, .flight-grid { grid-template-columns: 1fr; } .flight-card { border-right: none; border-bottom: 1px solid #e2e8f0; } .flight-card:last-child { border-bottom: none; } .entry-top { flex-direction: column; } }
+    /* ── 식별코드 빠른 로그인 ── */
+    .quick-open { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; }
+    .quick-open input { margin: 0; flex: 1; min-width: 120px; padding: 10px 12px; }
+    .quick-open .btn { padding: 10px 18px; white-space: nowrap; }
+    /* ── 사진 그리드 ── */
+    .photo-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .photo-item { position: relative; width: 90px; height: 90px; border-radius: 10px; overflow: hidden; border: 2px solid #e2e8f0; flex-shrink: 0; }
+    .photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-caption { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.55); color: white; font-size: .65rem; padding: 3px 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .photo-del { position: absolute; top: 3px; right: 3px; background: rgba(220,38,38,.85); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: .7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; }
+    .btn-photo-add { margin-top: 8px; padding: 5px 11px; background: #f0f9ff; color: #0369a1; border: 1px dashed #7dd3fc; border-radius: 8px; font-size: .8rem; font-weight: 800; cursor: pointer; }
+    .btn-photo-add:hover { background: #e0f2fe; }
   </style>
 </head>
 <body>
@@ -87,6 +99,14 @@
         <span>✈️</span>
         <h1>Easy Journal Pro</h1>
         <p>나의 여행 이야기를 기록하고 공유하세요</p>
+      </div>
+
+      <!-- 식별코드 빠른 로그인 (항상 노출) -->
+      <div class="card quick-open" style="margin-top:18px;">
+        <span style="font-weight:900;font-size:.92rem;white-space:nowrap;color:#1e3a8a;">🔑 식별코드로 열기</span>
+        <input id="quickId" maxlength="6" placeholder="식별코드 (예: a1b2c3)" autocomplete="off" autocapitalize="none">
+        <input id="quickPw" type="password" placeholder="비밀번호">
+        <button class="btn btn-blue" onclick="quickOpenJournal()">열기</button>
       </div>
 
       <div id="autoBanner" class="banner">
@@ -419,6 +439,24 @@
       showToast("여행기를 불러왔습니다.");
     }
 
+    // 랜딩의 식별코드 빠른 로그인
+    async function quickOpenJournal() {
+      const journalId = (document.getElementById("quickId").value || "").trim().toLowerCase();
+      const pw = document.getElementById("quickPw").value;
+      if (journalId.length !== 6) return alert("6자리 식별코드를 입력해주세요.");
+      if (!pw) return alert("비밀번호를 입력해주세요.");
+      const res = await fetch(`/api/journal/${journalId}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edit_pw: pw })
+      });
+      if (!res.ok) return alert("식별코드 또는 비밀번호가 올바르지 않습니다.");
+      const data = await res.json();
+      localStorage.setItem(`journal_token_${journalId}`, data.token);
+      await loadJournal(journalId);
+      showToast("여행기를 불러왔습니다.");
+    }
+
     async function loadJournal(journalId) {
       const res = await fetch(`/api/journal/${journalId}`);
       if (!res.ok) return alert("여행기를 불러오지 못했습니다.");
@@ -480,7 +518,56 @@
       const mapLink = safeUrl(e.google_map_url);
       const planned = e.planned_budget != null ? `${Number(e.planned_budget).toLocaleString()} ${esc(currentJournalData.currency || "")}` : "미정";
       const stars = e.rating ? `${"★".repeat(e.rating)}${"☆".repeat(5 - e.rating)}` : "미평가";
-      return `<div class="entry"><div class="entry-top"><div><h3>${esc(e.place_name || "일정")}</h3><div class="meta">${esc(e.start_time || "--:--")} ~ ${esc(e.end_time || "--:--")}</div></div><div class="tag-row"><span class="badge">예정 ${planned}</span><span class="badge">${e.was_visited === false ? "방문 못 함" : "방문함"}</span><span class="badge">${stars}</span>${mapLink ? `<a class="map" href="${mapLink}" target="_blank" rel="noopener">📍 지도</a>` : ""}</div></div><div class="ctl"><div class="fields3"><div><label for="place_${e.id}">장소명</label><input id="place_${e.id}" value="${esc(e.place_name || "")}" ${editable ? "" : "disabled"}></div><div><label for="start_${e.id}">시작 시간</label><input id="start_${e.id}" value="${esc(e.start_time || "")}" ${editable ? "" : "disabled"}></div><div><label for="end_${e.id}">종료 시간</label><input id="end_${e.id}" value="${esc(e.end_time || "")}" ${editable ? "" : "disabled"}></div></div><div class="fields3"><div><label for="actual_${e.id}">실제 지출</label><input id="actual_${e.id}" type="number" value="${esc(e.actual_budget != null ? e.actual_budget : "")}" ${editable ? "" : "disabled"}></div><div><label for="rating_${e.id}">별점</label><select id="rating_${e.id}" ${editable ? "" : "disabled"}>${[0,1,2,3,4,5].map((n) => `<option value="${n}" ${Number(e.rating || 0) === n ? "selected" : ""}>${n === 0 ? "미평가" : `${n}점`}</option>`).join("")}</select></div><div><label for="visited_${e.id}">방문 여부</label><select id="visited_${e.id}" ${editable ? "" : "disabled"}><option value="true" ${e.was_visited !== false ? "selected" : ""}>방문함</option><option value="false" ${e.was_visited === false ? "selected" : ""}>방문 못 함</option></select></div></div><div><label for="review_${e.id}">후기</label><textarea id="review_${e.id}" ${editable ? "" : "disabled"}>${esc(e.review || "")}</textarea></div><div><label for="memo_${e.id}">메모</label><textarea id="memo_${e.id}" ${editable ? "" : "disabled"}>${esc(e.memo || "")}</textarea></div></div>${editable ? `<div class="actions"><button class="btn btn-primary" onclick="saveEntry(${e.id})">저장</button><button class="btn btn-rose" onclick="deleteEntry(${e.id})">삭제</button></div>` : `<div style="margin-top:10px;color:#64748b;font-size:.84rem;">읽기 전용 상태입니다.</div>`}</div>`;
+
+      // 사진 영역
+      const photos = e.photos || [];
+      const photosHtml = photos.length > 0
+        ? `<div class="photo-grid">${photos.map(p =>
+            `<div class="photo-item">
+              <img src="${esc(p.photo_data)}" alt="${esc(p.caption || '')}">
+              ${p.caption ? `<div class="photo-caption">${esc(p.caption)}</div>` : ""}
+              ${editable ? `<button class="photo-del" onclick="deletePhoto(${p.id})" title="삭제">✕</button>` : ""}
+            </div>`).join("")}
+          </div>`
+        : "";
+      const uploadBtn = editable
+        ? `<button class="btn-photo-add" onclick="uploadPhoto(${e.id})">📷 사진 추가${photos.length > 0 ? ` (${photos.length}/5)` : ""}</button>`
+        : "";
+
+      return `<div class="entry">
+        <div class="entry-top">
+          <div><h3>${esc(e.place_name || "일정")}</h3><div class="meta">${esc(e.start_time || "--:--")} ~ ${esc(e.end_time || "--:--")}</div></div>
+          <div class="tag-row">
+            <span class="badge">예정 ${planned}</span>
+            <span class="badge">${e.was_visited === false ? "방문 못 함" : "방문함"}</span>
+            <span class="badge">${stars}</span>
+            ${mapLink ? `<a class="map" href="${mapLink}" target="_blank" rel="noopener">📍 지도</a>` : ""}
+          </div>
+        </div>
+        <div class="ctl">
+          <div class="fields3">
+            <div><label for="place_${e.id}">장소명</label><input id="place_${e.id}" value="${esc(e.place_name || "")}" ${editable ? "" : "disabled"}></div>
+            <div><label for="start_${e.id}">시작 시간</label><input id="start_${e.id}" value="${esc(e.start_time || "")}" ${editable ? "" : "disabled"}></div>
+            <div><label for="end_${e.id}">종료 시간</label><input id="end_${e.id}" value="${esc(e.end_time || "")}" ${editable ? "" : "disabled"}></div>
+          </div>
+          <div class="fields3">
+            <div><label for="actual_${e.id}">실제 지출</label><input id="actual_${e.id}" type="number" value="${esc(e.actual_budget != null ? e.actual_budget : "")}" ${editable ? "" : "disabled"}></div>
+            <div><label for="rating_${e.id}">별점</label><select id="rating_${e.id}" ${editable ? "" : "disabled"}>${[0,1,2,3,4,5].map((n) => `<option value="${n}" ${Number(e.rating || 0) === n ? "selected" : ""}>${n === 0 ? "미평가" : `${n}점`}</option>`).join("")}</select></div>
+            <div><label for="visited_${e.id}">방문 여부</label><select id="visited_${e.id}" ${editable ? "" : "disabled"}><option value="true" ${e.was_visited !== false ? "selected" : ""}>방문함</option><option value="false" ${e.was_visited === false ? "selected" : ""}>방문 못 함</option></select></div>
+          </div>
+          <div><label for="review_${e.id}">후기</label><textarea id="review_${e.id}" ${editable ? "" : "disabled"}>${esc(e.review || "")}</textarea></div>
+          <div><label for="memo_${e.id}">메모</label><textarea id="memo_${e.id}" ${editable ? "" : "disabled"}>${esc(e.memo || "")}</textarea></div>
+          <!-- 사진 -->
+          <div>
+            <label>사진</label>
+            ${photosHtml}
+            ${uploadBtn}
+          </div>
+        </div>
+        ${editable
+          ? `<div class="actions"><button class="btn btn-primary" onclick="saveEntry(${e.id})">저장</button><button class="btn btn-rose" onclick="deleteEntry(${e.id})">삭제</button></div>`
+          : `<div style="margin-top:10px;color:#64748b;font-size:.84rem;">읽기 전용 상태입니다.</div>`}
+      </div>`;
     }
 
     function toggleComposer(forceValue) {
@@ -511,6 +598,64 @@
       ["entryPlace", "entryMap", "entryPlanned", "entryStart", "entryEnd"].forEach((id) => { document.getElementById(id).value = ""; });
       await loadJournal(currentJournalId);
       showToast("일정이 추가되었습니다.");
+    }
+
+    // ─── 사진 업로드 ────────────────────────────────────────────────
+    async function uploadPhoto(entryId) {
+      if (!isEditor()) return alert("편집 권한이 필요합니다.");
+
+      // 현재 사진 수 확인
+      const entry = currentJournalData.entries.find(e => e.id === entryId);
+      if (entry && (entry.photos || []).length >= 5) {
+        return alert("사진은 항목당 최대 5장까지 추가할 수 있습니다.");
+      }
+
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+          return alert("5MB 이하 사진만 업로드 가능합니다.");
+        }
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const base64 = ev.target.result; // data:image/...;base64,...
+          const caption = prompt("사진 설명을 입력하세요 (선택, 엔터로 건너뜀):") ?? "";
+          const token = getJournalToken(currentJournalId);
+          const res = await fetch(`/api/journal/${currentJournalId}/photo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ entry_id: entryId, photo_data: base64, caption })
+          });
+          if (res.ok) {
+            await loadJournal(currentJournalId);
+            showToast("📸 사진이 추가되었습니다.");
+          } else {
+            const err = await res.json().catch(() => ({}));
+            alert("사진 업로드 실패: " + (err.detail || "알 수 없는 오류"));
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    }
+
+    async function deletePhoto(photoId) {
+      if (!isEditor()) return;
+      if (!confirm("이 사진을 삭제할까요?")) return;
+      const token = getJournalToken(currentJournalId);
+      const res = await fetch(`/api/journal/${currentJournalId}/photo/${photoId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        await loadJournal(currentJournalId);
+        showToast("사진이 삭제되었습니다.");
+      } else {
+        alert("삭제에 실패했습니다.");
+      }
     }
 
     async function saveEntry(id) {
@@ -657,7 +802,17 @@ ${entryText}`;
           const cost = e.actual_budget != null ? `<span style="color:#276749; font-size:0.78rem; margin-left:8px;">💰 ${Number(e.actual_budget).toLocaleString()}${safe(data.currency || "")}</span>` : "";
           const review = e.review ? `<div class="tl-sub">${safe(e.review).replace(/\n/g, "<br>")}</div>` : "";
           const notVisited = e.was_visited === false ? `<span style="background:#fed7d7;color:#c53030;padding:2px 6px;border-radius:4px;font-size:0.75rem;margin-left:6px;">방문 못 함</span>` : "";
-          return `<div class="tl-item"><div class="tl-time">${safe(e.start_time || "--:--")}</div><div class="tl-content"><div class="tl-label">${safe(e.place_name || "")}${notVisited}${stars}${cost} ${mapBtn}</div>${review}</div></div>`;
+          // 사진 그리드 (base64 그대로 embed → 독립 HTML에서도 표시됨)
+          const ePhotos = e.photos || [];
+          const photoGrid = ePhotos.length > 0
+            ? `<div class="photo-grid">${ePhotos.map(p =>
+                `<div class="photo-wrap">
+                  <img src="${p.photo_data}" alt="${safe(p.caption || '')}" class="photo-img">
+                  ${p.caption ? `<div class="photo-cap">${safe(p.caption)}</div>` : ""}
+                </div>`).join("")}
+              </div>`
+            : "";
+          return `<div class="tl-item"><div class="tl-time">${safe(e.start_time || "--:--")}</div><div class="tl-content"><div class="tl-label">${safe(e.place_name || "")}${notVisited}${stars}${cost} ${mapBtn}</div>${review}${photoGrid}</div></div>`;
         }).join("");
         dayHtml += `<div class="day-block"><div class="day-header" style="background:${dayColors[idx % dayColors.length]}; padding:20px 24px; color:white;"><div><div class="day-date">DAY ${dayNum}</div></div></div><div class="timeline">${timeline}</div></div>`;
         idx += 1;
@@ -700,7 +855,11 @@ ${entryText}`;
   .tl-label { font-size:0.95rem; font-weight:700; color:#2d3748; }
   .tl-sub { font-size:0.82rem; color:#718096; margin-top:6px; line-height:1.6; }
   .go-map { padding:3px 8px; background:#edf2f7; border-radius:6px; text-decoration:none; font-size:0.73rem; font-weight:bold; color:#4a5568; white-space:nowrap; margin-left:6px; }
-  @media(max-width:640px) { .flight-grid { grid-template-columns:1fr; } .flight-card { border-right:none; border-bottom:1px solid #e2e8f0; } }
+  .photo-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+  .photo-wrap { position:relative; width:140px; flex-shrink:0; }
+  .photo-img { width:140px; height:140px; object-fit:cover; border-radius:10px; display:block; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  .photo-cap { font-size:0.72rem; color:#718096; margin-top:4px; text-align:center; }
+  @media(max-width:640px) { .flight-grid { grid-template-columns:1fr; } .flight-card { border-right:none; border-bottom:1px solid #e2e8f0; } .photo-wrap { width:100px; } .photo-img { width:100px; height:100px; } }
 </style>
 </head>
 <body>
@@ -717,16 +876,42 @@ ${aiStory}
 </html>`;
     }
 
-    function downloadJournalHTML() {
+    async function downloadJournalHTML() {
       if (!currentJournalData) return alert("먼저 여행기를 열어주세요.");
+
+      // 1) HTML 생성 (사진 base64가 embed된 상태)
       const html = generateJournalHTML(currentJournalData);
+
+      // 2) 다운로드
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = blobUrl;
       a.download = `${(currentJournalData.title || "여행기").replace(/[\\/:*?"<>|]/g, "_")}.html`;
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
+
+      // 3) 편집 권한이 있을 때만 서버 사진 삭제 (용량 절약)
+      if (!isEditor()) return;
+      const allPhotos = currentJournalData.entries.flatMap(e => e.photos || []);
+      if (allPhotos.length === 0) return;
+
+      const token = getJournalToken(currentJournalId);
+      let deleted = 0;
+      for (const photo of allPhotos) {
+        const res = await fetch(`/api/journal/${currentJournalId}/photo/${photo.id}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        }).catch(() => null);
+        if (res && res.ok) deleted++;
+      }
+
+      if (deleted > 0) {
+        // 로컬 데이터에서도 사진 제거 후 재렌더
+        currentJournalData.entries.forEach(e => { e.photos = []; });
+        renderDays();
+        showToast(`📄 HTML 저장 완료!\n사진 ${deleted}장은 서버에서 삭제되었습니다. (HTML 파일에는 포함됨)`);
+      }
     }
   </script>
 </body>
